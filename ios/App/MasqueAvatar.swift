@@ -150,7 +150,9 @@ struct MasqueAvatar: View {
                 endPoint: CGPoint(x: rect.minX, y: rect.maxY)
             ))
 
-            // Eyes and brows, at the desktop mask's face anchor expressed as
+            let w = canvasSize.width, h = canvasSize.height
+
+            // Eyes, brows and mouth, at the desktop mask's face anchor expressed as
             // fractions of the silhouette's own bounding box (171.5 x 192),
             // which is what `path(in:)` normalises to — not the 228.541 face box
             // the desktop uses. Dark rather than white: on a mask
@@ -175,7 +177,23 @@ struct MasqueAvatar: View {
                 context.fill(eye, with: .color(.black.opacity(0.58)))
             }
 
-            let w = canvasSize.width, h = canvasSize.height
+            // The mouth. Upstream drew none, on the grounds that at avatar
+            // sizes one expression looks like any other — true of expressions,
+            // but a mouth is not one: it is what separates a theatre mask from
+            // a blank stare, and the desktop mask has it. Neutral and static,
+            // since the phone does not run the expression engine.
+            var mouth = Path()
+            mouth.move(to: CGPoint(x: rect.minX + w * 0.3892, y: rect.minY + h * 0.7344))
+            mouth.addQuadCurve(
+                to: CGPoint(x: rect.minX + w * 0.6108, y: rect.minY + h * 0.7344),
+                control: CGPoint(x: rect.minX + w * 0.5000, y: rect.minY + h * 0.8021)
+            )
+            context.stroke(
+                mouth,
+                with: .color(.black.opacity(0.58)),
+                style: StrokeStyle(lineWidth: w * 0.0677, lineCap: .round)
+            )
+
             for mirrored in [false, true] {
                 let fx: (CGFloat) -> CGFloat = { mirrored ? 1 - $0 : $0 }
                 var brow = Path()
