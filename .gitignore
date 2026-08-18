@@ -1,0 +1,12 @@
+node_modules
+.worktrees/
+dist
+dist-electron
+dist-native
+*.local
+.DS_Store
+*.tsbuildinfo
+electron/resources/speech-helper
+electron/resources/OperaBot Speech.app
+release
+.omb-scratch

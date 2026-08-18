@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">OperaBot</title>
+  <desc id="desc">A silver gradient opera mask, tilted, on a dark app tile.</desc>
+
+  <defs>
+    <clipPath id="mac-tile">
+      <rect width="1024" height="1024" rx="230.4" />
+    </clipPath>
+
+    <radialGradient id="tile" cx="68%" cy="36%" r="92%">
+      <stop offset="0" stop-color="#202227" />
+      <stop offset="0.56" stop-color="#131419" />
+      <stop offset="1" stop-color="#090A0D" />
+    </radialGradient>
+
+    <linearGradient id="mask-grey" x1="18%" y1="10%" x2="84%" y2="94%">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.28" stop-color="#E6E8EB" />
+      <stop offset="0.58" stop-color="#B7BBC2" />
+      <stop offset="0.82" stop-color="#848A94" />
+      <stop offset="1" stop-color="#5B616B" />
+    </linearGradient>
+  </defs>
+
+  <!-- macOS icon grid: the tile is 824x824 inside a 1024 canvas (corner
+       radius 185.4), not the full canvas — a full-bleed tile renders
+       noticeably larger than every other icon in the Dock. The tile is
+       drawn at 1024 and scaled into the grid, so the artwork inside keeps
+       its own coordinates. -->
+  <g transform="translate(100 100) scale(0.8046875)">
+  <g clip-path="url(#mac-tile)">
+    <rect width="1024" height="1024" fill="url(#tile)" />
+
+    <!-- The mask is the mark, so it sits whole and centred rather than
+         bleeding off the edges. The slight tilt is how a theatre mask is
+         conventionally shown — hung, not mounted square. -->
+    <svg x="112" y="86" width="800" height="800" viewBox="0 0 228.541 228.541" overflow="visible">
+      <g transform="rotate(-10 114.2705 114.2705)">
+        <path
+          d="M 34.041 54 C 40.041 34 70.041 22 114.2705 22 C 158.5 22 188.5 34 194.5 54 C 200 84 197 120 188 148 C 176 184 148 210 114.2705 214 C 80.541 210 52.541 184 40.541 148 C 31.541 120 28.541 84 34.041 54 Z"
+          fill="url(#mask-grey)"
+        />
+
+        <path d="M 58 94 Q 82 70 108 86" fill="none" stroke="#101114" stroke-opacity="0.34"
+              stroke-width="12" stroke-linecap="round" />
+        <path d="M 170.541 94 Q 146.541 70 120.541 86" fill="none" stroke="#101114" stroke-opacity="0.34"
+              stroke-width="12" stroke-linecap="round" />
+
+        <ellipse cx="88.5" cy="126" rx="12" ry="20" fill="#101114" />
+        <ellipse cx="140" cy="126" rx="12" ry="20" fill="#101114" />
+        <path d="M 92 162 Q 114.2705 178 136.5 162" fill="none" stroke="#101114"
+              stroke-width="13" stroke-linecap="round" />
+      </g>
+    </svg>
+
+    <rect x="8" y="8" width="1008" height="1008" rx="222.4" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="16" />
+  </g>
+  </g>
+</svg>
