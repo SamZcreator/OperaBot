@@ -218,8 +218,34 @@ xcodebuild -project OperaBotCompanion.xcodeproj \
 
 The simulator validates compilation, launch, layout, manual address parsing,
 and failure states. Bonjour, Local Network permission, Tailscale routing,
-Keychain behavior across a reboot, and approval delivery still require a real
-iPhone pass.
+Keychain behavior, and approval delivery still require a real iPhone pass.
+
+### Pairing cannot complete in the simulator
+
+`CODE_SIGNING_ALLOWED=NO` is what lets the command above run without an Apple
+developer account, and it is also why pairing stops one step short of working
+there. An unsigned build carries no entitlements at all, so every keychain
+call fails with `errSecMissingEntitlement` (-34018) and the app says:
+
+```
+Couldn't access the pairing securely: A required entitlement isn't present.
+```
+
+The shape of that failure is worth knowing, because it reads as a broken
+sidecar and is not. `CompanionClient.pair` succeeds first: the harness
+registers the device, `devices.json` gains a record, and the desktop panel
+lists the phone. Only then does `Keychain.save` throw, so `Session.pair`
+never reaches `connect()` — the phone holds a token it cannot store, the app
+stays on the pairing screen, and no authenticated request is ever made. A
+device whose `lastSeenAt` still equals its `createdAt` is this, and the
+sidecar's own logs stay empty because nothing ever arrives.
+
+Re-signing the built app ad-hoc with a keychain entitlement is not a way
+round it: the simulator refuses to launch any bundle whose entitlements are
+not backed by a real signing identity, so the app that starts is the one that
+cannot reach the keychain. Sign with a team instead — a free Apple ID under
+Xcode → Settings → Accounts is enough to get a personal one — or test the
+pairing path on a device.
 
 ## Follow-on releases
 

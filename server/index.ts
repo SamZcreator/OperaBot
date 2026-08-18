@@ -3471,6 +3471,23 @@ const server = createServer(async (req, res) => {
   }
 });
 
+// A port that is already taken is by far the most common way this command
+// fails — a second `pnpm dev:server`, or a packaged app already running —
+// and without a handler here Node turns it into an unhandled 'error' event:
+// a stack trace through net.js internals, which says nothing about what to
+// do. The webhook receiver a few hundred lines up already answers the same
+// situation in one sentence; this is that courtesy for the listener someone
+// is actually waiting on.
+server.on("error", (error: NodeJS.ErrnoException) => {
+  if (error.code !== "EADDRINUSE") throw error;
+  console.error(
+    `operabot server cannot start: port ${PORT} is already in use.\n` +
+      `Another OperaBot server is probably running already — stop that one, ` +
+      `or start this with OMB_PORT set to a free port.`,
+  );
+  process.exit(1);
+});
+
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`operabot server on http://127.0.0.1:${PORT}`);
 });

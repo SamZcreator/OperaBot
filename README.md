@@ -173,10 +173,27 @@ turn publishing on later.
 ```sh
 git clone https://github.com/SamZcreator/OperaBot && cd OperaBot
 pnpm install
+```
 
-pnpm dev:server    # harness server → 127.0.0.1:8799
-pnpm dev           # app → http://127.0.0.1:5199
-pnpm dev:desktop   # Electron shell; keep the two commands above running
+Then start three processes, **each in its own terminal window** — the first two
+keep running and never return a prompt.
+
+Terminal 1, the harness server on `127.0.0.1:8799`:
+
+```sh
+pnpm dev:server
+```
+
+Terminal 2, the app on `http://127.0.0.1:5199`:
+
+```sh
+pnpm dev
+```
+
+Terminal 3, the Electron shell (leave the other two running):
+
+```sh
+pnpm dev:desktop
 ```
 
 Requirements: **macOS, Windows, or Ubuntu 24.04 x64**, **Node 24+**, **pnpm**, and at least one agent CLI — [`claude`](https://claude.com/claude-code),
@@ -186,10 +203,16 @@ in the model picker automatically.
 Package the desktop application:
 
 ```sh
-pnpm package:mac      # macOS: DMG + ZIP; requires Swift/Xcode tools
-pnpm package:win      # Windows: installer + ZIP
-pnpm package:linux    # Ubuntu x64: .deb + AppImage; no Swift required
+pnpm package:mac
+pnpm package:win
+pnpm package:linux
 ```
+
+| Command | Produces | Needs |
+|---|---|---|
+| `pnpm package:mac` | DMG + ZIP | Swift/Xcode tools |
+| `pnpm package:win` | Installer + ZIP | — |
+| `pnpm package:linux` | Ubuntu x64 `.deb` + AppImage | — |
 
 ### Desktop capability status
 
@@ -217,13 +240,18 @@ Composio and Box are third-party services with their own accounts and terms. Box
 its trial, and using a cloud computer may incur charges.
 
 ```sh
-pnpm typecheck     # app + server
-pnpm test          # unit, driver, API, and desktop capability tests
-pnpm build         # typecheck + production build
-pnpm check:electron # syntax-check Electron main/preload files
-pnpm package:win   # Windows installer + zip → release/
-pnpm package:linux # Ubuntu x64 .deb + AppImage → release/
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm check:electron
 ```
+
+| Command | What it does |
+|---|---|
+| `pnpm typecheck` | App + server |
+| `pnpm test` | Unit, driver, API, and desktop capability tests |
+| `pnpm build` | Typecheck + production build |
+| `pnpm check:electron` | Syntax-check Electron main/preload files |
 
 ### Routines and webhook triggers
 
