@@ -31,6 +31,10 @@ function knownDirs() {
     const home = homedir();
     return [
         join(home, ".local", "bin"), // claude installer default
+        join(home, ".npm-global", "bin"), // npm prefix ~/.npm-global (claude, opencode)
+        join(home, ".kimi-code", "bin"), // kimi-code installer
+        join(home, ".grok", "bin"), // x.ai installer
+        join(home, ".opencode", "bin"), // opencode installer
         join(home, ".claude", "local"), // claude "local install"
         "/opt/homebrew/bin", // brew, Apple silicon
         "/usr/local/bin", // brew Intel / classic installs
@@ -67,11 +71,18 @@ function windowsKnownDirs() {
 }
 let cached = null;
 let probed = false;
+let loginShellPath = null;
 /** Drop the memoized PATH so the next augmentedPath() rescans. Called when
  * the app re-probes engines, so "check again" can find something installed
- * since launch instead of answering from the PATH we booted with. */
+ * since launch instead of answering from the PATH we booted with. `probed`
+ * must reset too: the login-shell probe merges rc-file PATH entries (e.g.
+ * ~/.kimi-code/bin exported from .zshrc) into the cache asynchronously,
+ * and without resetting it a rescan would rebuild the cache without those
+ * entries and never re-probe — "check again" would permanently lose
+ * anything only the login shell's rc file knows about. */
 export function resetPathCache() {
     cached = null;
+    probed = false;
 }
 /** Current best PATH, synchronously. Cheap after the first call. */
 export function augmentedPath() {
@@ -79,6 +90,10 @@ export function augmentedPath() {
         cached = mergePaths([
             ...(process.env.OMB_EXTRA_PATH ? process.env.OMB_EXTRA_PATH.split(delimiter) : []),
             ...(process.env.PATH ? process.env.PATH.split(delimiter) : []),
+            // Keep the last successful login-shell result while a rescan starts a
+            // fresh asynchronous probe. Otherwise resetPathCache() would make
+            // rc-only CLIs disappear again for the response that triggered it.
+            ...(loginShellPath ? loginShellPath.split(delimiter) : []),
             // Both platforms scan their standard install locations; only the
             // login-shell probe below stays unix-only, since Windows has no
             // equivalent rc file to source.
@@ -107,6 +122,7 @@ function probeLoginShellPath() {
         const m = /__OMB_PATH__([^\n]*)/.exec(stdout);
         if (!m || !m[1])
             return;
+        loginShellPath = m[1];
         cached = mergePaths([...(cached ?? "").split(delimiter), ...m[1].split(delimiter)]);
     });
 }
@@ -114,6 +130,61 @@ function probeLoginShellPath() {
 export function resetPathCacheForTests() {
     cached = null;
     probed = false;
+    loginShellPath = null;
+}
+/** Every `name` binary on the augmented PATH as absolute paths, in PATH
+ * order (first = what a bare name would run). Used by the Engines panel's
+ * "detected" dropdown and the /api/cli-candidates endpoint. A path-ish
+ * name is echoed back as-is — it already IS a location. */
+export function findCliCandidates(name) {
+    if (!name || /[\n\r]/.test(name))
+        return [];
+    if (/[/\\]/.test(name) || /^[a-zA-Z]:/.test(name))
+        return [name];
+    const exts = process.platform === "win32" ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean) : [""];
+    const out = [];
+    for (const dir of augmentedPath().split(delimiter)) {
+        if (!dir)
+            continue;
+        for (const ext of exts) {
+            const p = join(dir, name + ext);
+            if (existsSync(p)) {
+                out.push(p);
+                break;
+            }
+        }
+    }
+    return out;
+}
+/** Split a `cli` string into [command, ...fixedArgs] on unquoted whitespace —
+ * a mini tokenizer, never a shell. Quotes group segments (paths with spaces,
+ * fixed args with spaces); no escapes, no substitution, nothing evaluated. */
+export function splitCliString(cli) {
+    const out = [];
+    let cur = "";
+    let quote = null;
+    for (const ch of cli.trim()) {
+        if (quote) {
+            if (ch === quote)
+                quote = null;
+            else
+                cur += ch;
+        }
+        else if (ch === '"' || ch === "'") {
+            quote = ch;
+        }
+        else if (/\s/.test(ch)) {
+            if (cur)
+                out.push(cur);
+            cur = "";
+        }
+        else {
+            cur += ch;
+        }
+    }
+    if (cur)
+        out.push(cur);
+    return out;
 }
 function isFile(p) {
     try {
@@ -213,7 +284,8 @@ function parseNodeShebang(file) {
  * How to actually spawn `cli` with `args` on this platform. Identity
  * everywhere but win32 — POSIX already resolves PATH and #! itself.
  */
-export function resolveCliSpawn(cli, args) {
+/** Resolve a single command word (no tokenizer) — the platform spawn rules. */
+function resolveWord(cli, args) {
     if (process.platform !== "win32")
         return { command: cli, args };
     const file = whichWin(cli);
@@ -229,4 +301,29 @@ export function resolveCliSpawn(cli, args) {
         return { command: file, args };
     const viaNode = parseNodeShebang(file);
     return viaNode ? { command: viaNode.command, args: [...viaNode.args, ...args] } : { command: file, args };
+}
+export function resolveCliSpawn(cli, args) {
+    // An EXISTING FILE wins over the tokenizer: paths with spaces come from
+    // our own candidate list unquoted ("/Applications/My Tools/claude"), and
+    // splitting those would shred them. Only a bare word (no spaces) or an
+    // explicitly-quoted/wrapper string reaches the split below.
+    const trimmed = cli.trim();
+    if (trimmed.includes(" ") && existsSync(trimmed))
+        return resolveWord(trimmed, args);
+    // A `cli` value may carry fixed leading arguments — wrapper scripts like
+    // `/usr/local/bin/ag claude agp` are one string in the Engines panel. ONE
+    // tokenizer pass, then resolve the head directly (never re-tokenized: a
+    // quoted token may itself contain spaces, so feeding it back through the
+    // splitter would shred it). Fixed args go BEFORE invocation args — a
+    // wrapper's subcommand must lead (`ag claude agp --help`), or the wrapper
+    // swallows the flag itself.
+    const split = splitCliString(cli);
+    if (split.length > 1 || split[0] !== trimmed) {
+        const [head, ...fixed] = split;
+        // empty input → hand the raw string to spawn so IT reports the ENOENT
+        if (!head)
+            return { command: cli, args };
+        return resolveWord(head, [...fixed, ...args]);
+    }
+    return resolveWord(cli, args);
 }

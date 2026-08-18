@@ -37,11 +37,12 @@ memory of its thread, model, computer, and apps) and rebuilds it open, local-fir
 already have:
 
 - **Bring your own agents.** Bots run on the `claude`, `codex`, and `grok` CLIs installed on your own machine
-  — your existing logins and subscriptions, no new accounts, no proxy in the middle.
+  — your existing logins and subscriptions, no new accounts, no proxy in the middle. Point any engine at a
+  custom CLI binary (a versioned build or wrapper) in **Settings → Engines**.
 - **Local first.** One small harness server on `127.0.0.1` owns every agent process. Transcripts, keys, and
   events live in `~/.operabot`, not a cloud.
 - **Agents with hands.** Each bot can get a real computer — a cloud Linux desktop it drives while you watch
-  live, or your own Mac — plus 500+ apps through Composio Connect.
+  live, or your own Mac — plus 500+ apps through Composio.
 
 ## Features
 
@@ -81,7 +82,7 @@ permission broker turns every risky action into a decision you make, for cloud a
 
 ### 🔌 Connected apps
 
-A one-click marketplace over Composio Connect: Gmail, Slack, GitHub, Notion, Linear and hundreds more.
+A one-click marketplace over Composio Sessions: Gmail, Slack, GitHub, Notion, Linear and hundreds more.
 OAuth once, and every bot can use them as tools.
 
 
@@ -149,7 +150,7 @@ flowchart LR
     REG --> CL & CX & GR
     CL & CX & GR -- "permission requests" --> BROKER
     server -- "Box API" --> BOX[("Cloud computer<br/>box.ascii.dev")]
-    server -- "Composio Connect" --> APPS[("Gmail · Slack · GitHub · …")]
+    server -- "Composio Session" --> APPS[("Gmail · Slack · GitHub · …")]
 ```
 
 | Layer | Where | What it does |
@@ -200,15 +201,15 @@ pnpm package:linux    # Ubuntu x64: .deb + AppImage; no Swift required
 | Native on-device dictation | Supported | Planned | Planned |
 
 Unavailable native features fail closed on Ubuntu without blocking chat or cloud features. Linux local computer
-control, Wayland capture/automation, dictation, and ARM64 are not claimed by the baseline package.
+control, Wayland capture/automation, dictation, and ARM64 are tracked in
+[#29](https://github.com/SamZcreator/OperaBot/issues/29) and are not claimed by the baseline package.
 
 These credentials are optional — local chat works without them. Paste a key once in **App Settings** (gear
 in the sidebar footer) when you want to enable its integration:
 
 | Credential | What it enables | Where to get it |
 |---|---|---|
-| Composio Connect key (`ck_…`) | Connect Gmail, GitHub, Slack, Notion, and other apps to your bots | [Composio Connect setup guide](https://docs.composio.dev/docs/composio-connect) |
-| Composio API key (`ak_…`) | Browse the full app catalog with official names and logos | [Composio project API key guide](https://docs.composio.dev/reference/authenticating-to-composio/project-api-key-permissions) |
+| Composio project key (`ak_…`) | Connect Gmail, GitHub, Slack, Notion, and other apps to your bots | [OperaBot Composio setup](docs/composio.md) |
 | Box API key | Give bots an isolated remote Linux computer with a desktop and terminal | [Box API key guide](https://docs.ascii.dev/box/api-keys) |
 | ElevenLabs key | Read replies aloud, and call your bots | [ElevenLabs API keys](https://elevenlabs.io/app/settings/api-keys) |
 
@@ -252,7 +253,8 @@ small; adding a provider is one file in [`server/drivers/`](server/drivers/) plu
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE) © 2026 Nadia Vos and contributors.
 
-It is an independent project inspired by Grok Bot, and is not affiliated with, endorsed by, or
-associated with xAI; "Grok" is a trademark of its respective owner.
+OperaBot is an independent, open-source project inspired by Grok Bot. It is
+not affiliated with, endorsed by, or associated with xAI; "Grok" is a trademark
+of its respective owner.

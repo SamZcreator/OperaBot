@@ -6,7 +6,7 @@
 //
 // The fake CLI is a shebang script Windows cannot exec directly —
 // resolveCliSpawn turns it into `node <script>`, so these run everywhere.
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +20,7 @@ import { GrokAgentDriver } from "./grok.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
 import { DroidAgentDriver } from "./droid.ts";
+import { removeTempDir } from "../../testing/cleanup.ts";
 
 const FAKE_CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "testing", "fake-acp-cli.ts");
 
@@ -166,7 +167,7 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_USAGE_ROOT;
     recorder?.stop();
     await instance?.dispose();
-    rmSync(scratch, { recursive: true, force: true });
+    await removeTempDir(scratch);
   });
 
   it("normalizes a full turn into the canonical event sequence", async () => {
@@ -223,12 +224,31 @@ describe("ACP turns (fake CLI)", () => {
     expect(seen.env.OPENCODE_API_KEY).toBeUndefined();
   });
 
-  // this driver has no Composio mount, so it must not claim the
-  // capability: claiming it is what would tell an ACP bot to call
-  // composio tools it was never given
-  it("does not claim the Composio capability it cannot honour", async () => {
+  // ACP session/new accepts stdio MCP entries, so connected apps use the
+  // same harness-owned bridge as Claude and Codex.
+  it("mounts connected apps as a stdio MCP server", async () => {
     await create();
-    expect(instance.adapter.capabilities.composioMcp).not.toBe(true);
+    const dump = join(scratch, "composio.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    expect(instance.adapter.capabilities.composioMcp).toBe(true);
+    await instance.adapter.sendTurn({
+      threadId: "t-composio",
+      text: "go",
+      integrations: {
+        composio: {
+          command: process.execPath,
+          args: ["/tmp/connector-proxy.js"],
+          env: { OMB_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp" },
+        },
+      },
+    });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8"))).toContainEqual({
+      name: "composio",
+      command: process.execPath,
+      args: ["/tmp/connector-proxy.js"],
+      env: [{ name: "OMB_CONNECTOR_UPSTREAM_URL", value: "http://127.0.0.1:8799/api/internal/connectors/mcp" }],
+    });
   });
 
   it("droid takes model and autonomy over the wire, never through argv", async () => {
@@ -523,7 +543,7 @@ describe("ACP snapshot", () => {
       expect((await instance.snapshot()).authenticated).toBe(true);
     } finally {
       await instance.dispose();
-      rmSync(scratch, { recursive: true, force: true });
+      await removeTempDir(scratch);
     }
   });
 
@@ -586,7 +606,7 @@ describe("ACP snapshot", () => {
       expect((await neither.snapshot()).authenticated).toBe(false);
     } finally {
       for (const i of instances) await i.dispose();
-      rmSync(scratch, { recursive: true, force: true });
+      await removeTempDir(scratch);
     }
   });
 
@@ -615,14 +635,14 @@ describe("ACP snapshot", () => {
     try {
       // favourites first in the user's own order, then the built-in slice
       expect(instance.models.options.slice(0, 2)).toEqual([
-        { id: "custom:Azure-Opus-0", label: "Azure Opus" },
-        { id: "custom:LMStudio-Qwen-0", label: "Qwen (local)" },
+        { id: "custom:Azure-Opus-0", label: "Azure Opus", custom: true },
+        { id: "custom:LMStudio-Qwen-0", label: "Qwen (local)", custom: true },
       ]);
       expect(instance.models.options.some((o) => o.id === "claude-opus-5")).toBe(true);
       expect(instance.models.default).toBe("custom:LMStudio-Qwen-0");
     } finally {
       await instance.dispose();
-      rmSync(scratch, { recursive: true, force: true });
+      await removeTempDir(scratch);
     }
   });
 
@@ -643,7 +663,7 @@ describe("ACP snapshot", () => {
       expect(instance.models.options.every((o) => !o.id.startsWith("custom:"))).toBe(true);
     } finally {
       await instance.dispose();
-      rmSync(scratch, { recursive: true, force: true });
+      await removeTempDir(scratch);
     }
   });
 
@@ -664,7 +684,7 @@ describe("ACP snapshot", () => {
       expect((await instance.snapshot()).authenticated).toBe(true);
     } finally {
       await instance.dispose();
-      rmSync(scratch, { recursive: true, force: true });
+      await removeTempDir(scratch);
     }
   });
 

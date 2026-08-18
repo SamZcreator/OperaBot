@@ -25,12 +25,9 @@ function settleCard(pending, behavior, source) {
         .find((m) => m.id === pending.messageId);
     if (!existing?.card || existing.card.answered)
         return;
-    const patched = pending.bus.store.patchMessage(pending.threadId, pending.messageId, {
+    pending.bus.store.patchMessage(pending.threadId, pending.messageId, {
         card: { ...existing.card, answered: behavior, dismissed: source !== "user" },
     });
-    if (patched) {
-        pending.bus.broadcast({ kind: "message.patch", threadId: pending.threadId, message: patched });
-    }
 }
 /** requestId → pending ask. Lives only in memory — restarting the
  * server cancels every in-flight approval, like provider permissions do. */
@@ -56,7 +53,6 @@ function pushApprovalCard(bus, from, target, message, action, requestId, sourceT
             allowKey: peerAllowKey(action, target.id),
         },
     });
-    bus.broadcast({ kind: "message", threadId: sourceThreadId, message: note });
     return note;
 }
 /** Ask the user (in the source task thread) whether `from` may `action` `target`.
@@ -141,10 +137,8 @@ export function dismissStalePeerCards(bus) {
                 const patched = bus.store.patchMessage(threadId, message.id, {
                     card: { ...card, answered: "deny", dismissed: true },
                 });
-                if (patched) {
-                    bus.broadcast({ kind: "message.patch", threadId, message: patched });
+                if (patched)
                     dismissed += 1;
-                }
             }
         }
     }

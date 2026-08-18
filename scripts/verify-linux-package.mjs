@@ -57,7 +57,7 @@ const fields = execFileSync(
 for (const expected of [
   "Package: operabot",
   "Architecture: amd64",
-  "Maintainer: SamZcreator",
+  "Maintainer: Nadia Vos",
   "Section: utils",
   "Priority: optional",
 ]) {

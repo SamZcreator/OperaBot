@@ -15,8 +15,7 @@ export function getOrCreateChannel(store, from, target) {
  * of mistake peer coordination is supposed to avoid. */
 export function mirrorExchange(bus, from, target, message, channel, sourceThreadId = from.threadId) {
     const note = (threadId, m) => {
-        const message = bus.store.appendMessage(threadId, m);
-        bus.broadcast({ kind: "message", threadId, message });
+        bus.store.appendMessage(threadId, m);
         return message;
     };
     if (channel) {
@@ -45,7 +44,6 @@ export function mirrorExchange(bus, from, target, message, channel, sourceThread
     });
     if (channel) {
         bus.store.patchGroup(channel.id, { unread: true });
-        bus.broadcastGroup(channel.id);
     }
 }
 /** Mirror `target`'s reply into the channel so the channel stays the
@@ -54,13 +52,27 @@ export function mirrorExchange(bus, from, target, message, channel, sourceThread
 export function mirrorReply(bus, target, reply, channel) {
     if (!channel || !reply.trim())
         return;
-    const message = bus.store.appendMessage(channel.threadId, {
+    bus.store.appendMessage(channel.threadId, {
         role: "bot",
         kind: "text",
         text: reply,
         from: { botId: target.id, name: target.name, color: target.color },
     });
-    bus.broadcast({ kind: "message", threadId: channel.threadId, message });
     bus.store.patchGroup(channel.id, { unread: true });
-    bus.broadcastGroup(channel.id);
+}
+/** Mirror a terminal activity note into the channel — for async handoffs
+ * whose terminal state is not a reply (turn failed, was stopped, or never
+ * started). Prior art (A2A, MCP Tasks) is unanimous that every terminal
+ * state of an async handoff should be visible where the human is looking,
+ * and the channel is that place. */
+export function mirrorActivity(bus, from, channel, name, ok) {
+    if (!channel)
+        return;
+    bus.store.appendMessage(channel.threadId, {
+        role: "bot",
+        kind: "activity",
+        tool: { name, ok },
+        from: { botId: from.id, name: from.name, color: from.color },
+    });
+    bus.store.patchGroup(channel.id, { unread: true });
 }

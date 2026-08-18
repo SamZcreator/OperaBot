@@ -173,9 +173,7 @@ export const GrokDriver = {
                 capabilities: { sessionModelSwitch: "in-session" },
                 sendTurn,
                 interruptTurn: async (threadId) => active.get(threadId)?.abort.abort(),
-                respondToRequest: async () => {
-                    throw new Error("grok driver has no pending asks");
-                },
+                respondToRequest: async () => "unavailable", // this engine has no asks to answer
                 hasSession: (threadId) => active.has(threadId),
                 stopAll: async () => {
                     for (const { abort } of active.values())

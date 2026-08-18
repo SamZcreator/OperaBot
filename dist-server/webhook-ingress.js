@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
+import { z } from "zod";
+import { parseJson } from "./schema.js";
 export const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
+const statusErrorSchema = z.object({ status: z.number().int().optional() });
+const serverAddressSchema = z.object({ port: z.number().int().min(1).max(65_535) });
 function json(res, status, body) {
     res.writeHead(status, {
         "content-type": "application/json",
@@ -22,7 +26,7 @@ function readRawBody(req) {
         req.on("data", (chunk) => {
             if (done)
                 return;
-            bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+            bytes += Buffer.byteLength(chunk);
             if (bytes > MAX_WEBHOOK_BODY_BYTES)
                 return fail(413, "Webhook body is too large");
             raw += chunk;
@@ -41,7 +45,7 @@ function parsePayload(raw, contentType) {
         return {};
     if (contentType.includes("application/json") || contentType.includes("+json")) {
         try {
-            return JSON.parse(raw);
+            return parseJson(raw);
         }
         catch {
             throw Object.assign(new Error("Invalid JSON webhook body"), { status: 400 });
@@ -109,7 +113,8 @@ export function createWebhookIngressHandler(manager) {
             return json(res, 202, { accepted: true, ...result });
         }
         catch (error) {
-            const status = Number(error?.status) || 500;
+            const parsedError = statusErrorSchema.safeParse(error);
+            const status = parsedError.success ? parsedError.data.status ?? 500 : 500;
             const message = error instanceof Error ? error.message : String(error);
             // Manager-level validation records its own rejection with the parsed
             // payload. Receiver-level failures happen earlier, so record metadata
@@ -136,12 +141,12 @@ export async function listenWebhookIngress(manager, options) {
             resolve();
         });
     });
-    const address = server.address();
-    if (!address || typeof address === "string") {
+    const address = serverAddressSchema.safeParse(server.address());
+    if (!address.success) {
         server.close();
         throw new Error("Webhook receiver did not get a TCP address");
     }
-    return { server, host, port: address.port, baseUrl: `http://${host}:${address.port}` };
+    return { server, host, port: address.data.port, baseUrl: `http://${host}:${address.data.port}` };
 }
 export function webhookCredential(baseUrl, endpointId, secret) {
     const endpointUrl = `${baseUrl.replace(/\/$/, "")}/hooks/${endpointId}`;

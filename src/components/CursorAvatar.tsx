@@ -23,7 +23,7 @@ import React, { useEffect, useId, useMemo, useRef } from 'react'
 
 /* ------------------------------------------------------------------- shape */
 
-export interface CursorShape {
+export interface CursorSilhouette {
   /** Human-readable name, used for the accessible label. */
   name: string
   /** Transform mapping the artwork into the 228.541-unit face box. '' for none. */
@@ -36,7 +36,7 @@ export interface CursorShape {
   anchor: { x: number; y: number; scale: number }
 }
 
-export const SHAPE: CursorShape = {
+export const DEFAULT_SILHOUETTE: CursorSilhouette = {
   name: "opera mask",
   // Authored straight in face-box units, so no fit transform is needed.
   //
@@ -104,10 +104,10 @@ const ENCODED: string[] = [
 const RAW: Ring[][] = ENCODED.map(line =>
   line.split('|').map(
     ring =>
-      ring.split(' ').map(pair => {
+      ring.split(' ').map((pair): [number, number] => {
         const [x, y] = pair.split(',')
         return [Number(x), Number(y)]
-      }) as Ring
+      })
   )
 )
 
@@ -133,7 +133,7 @@ export const GAZE: [number, number][] = RAW.map(ex => {
 
 /** Expressions with their look-direction removed — every one looks straight ahead. */
 export const EXPRESSIONS: Ring[][] = RAW.map((ex, i) =>
-  ex.map(ring => ring.map(p => [p[0] - GAZE[i][0], p[1] - GAZE[i][1]] as [number, number]))
+  ex.map(ring => ring.map((p): [number, number] => [p[0] - GAZE[i][0], p[1] - GAZE[i][1]]))
 )
 
 export const EXPRESSION_COUNT = EXPRESSIONS.length
@@ -206,7 +206,7 @@ export interface BodyMotion {
   settle?: number
 }
 
-export const MOTION: Record<CursorState, BodyMotion> = {
+export const MOTION = {
   // Lifecycle — quiet, breathing, alive but not busy.
   sleeping: { pulse: [0.028, 4600], tilt: 2 },
   waking: { enter: [0.92, 700], pulse: [0.03, 2200] },
@@ -253,7 +253,7 @@ export const MOTION: Record<CursorState, BodyMotion> = {
   dragging: { tilt: -6, sway: [2, 900] },
   bouncing: { bob: [12, 560], squash: 0.45 },
   'powering-down': { settle: 0.05, tilt: 4 },
-}
+} satisfies Record<CursorState, BodyMotion>
 
 /** How long a `settle` takes to reach its resting scale. */
 const SETTLE_MS = 1400
@@ -319,6 +319,8 @@ export interface StateEffects {
   glyph?: GlyphSpec
 }
 
+interface EffectsByState extends Partial<Record<CursorState, StateEffects>> {}
+
 /**
  * The exclamation mark the mascot becomes when something needs attention — drawn as a
  * tapered bar and a dot so it reads as a character rather than a rectangle.
@@ -333,7 +335,7 @@ const GLYPH_QUERY =
   'd="M88 76 A27 27 0 1 1 114.3 112 L114.3 132"/>' +
   '<circle fill="{{GRADIENT}}" cx="114.3" cy="170" r="13"/>'
 
-export const EFFECTS: Partial<Record<CursorState, StateEffects>> = {
+export const EFFECTS: EffectsByState = {
   // Celebration — the loud burst.
   // Travel is deliberately bounded: the viewBox only carries 15 units of margin, so a
   // piece thrown much past ~130 from centre would be clipped mid-flight.
@@ -367,7 +369,7 @@ function poolPaths(layer: SVGGElement, count: number): SVGPathElement[] {
     path.setAttribute('fill', 'none')
     layer.appendChild(path)
   }
-  return Array.from(layer.childNodes) as SVGPathElement[]
+  return Array.from(layer.querySelectorAll<SVGPathElement>(':scope > path'))
 }
 
 /** Confetti: short curved strokes thrown outward, arcing down as they fade. */
@@ -574,7 +576,7 @@ export type CursorState =
  * Which expressions a state cycles through. The first is its resting face, chosen as the
  * pool's most forward-facing member so a mascot at rest looks at you rather than past you.
  */
-export const POOLS: Record<CursorState, number[]> = {
+export const POOLS = {
   sleeping: [
     22,
     13,
@@ -771,10 +773,10 @@ export const POOLS: Record<CursorState, number[]> = {
     22,
     13
   ]
-}
+} satisfies Record<CursorState, number[]>
 
 /** How long a state holds an expression before drifting to another, in ms. */
-const EXPR_CADENCE: Record<CursorState, [number, number]> = {
+const EXPR_CADENCE = {
   sleeping: [
     6000,
     10000
@@ -931,10 +933,10 @@ const EXPR_CADENCE: Record<CursorState, [number, number]> = {
     6000,
     9000
   ]
-} as Record<CursorState, [number, number]>
+} satisfies Record<CursorState, [number, number]>
 
 /** Blink cadence in ms, or null for states that never blink. */
-const BLINK: Record<CursorState, [number, number] | null> = {
+const BLINK = {
   sleeping: null,
   waking: null,
   idle: [
@@ -1043,10 +1045,10 @@ const BLINK: Record<CursorState, [number, number] | null> = {
     4500
   ],
   "powering-down": null
-} as Record<CursorState, [number, number] | null>
+} satisfies Record<CursorState, [number, number] | null>
 
 /** Grouping, for pickers and docs. */
-export const STATE_GROUPS: Record<string, CursorState[]> = {
+export const STATE_GROUPS = {
   "Cycle de vie": [
     "sleeping",
     "waking",
@@ -1094,18 +1096,21 @@ export const STATE_GROUPS: Record<string, CursorState[]> = {
     "bouncing",
     "powering-down"
   ]
-}
+} satisfies Record<string, CursorState[]>
 
-export const CURSOR_STATES = Object.keys(POOLS) as CursorState[]
+const isCursorState = (state: string): state is CursorState => state in POOLS
+export const CURSOR_STATES = Object.keys(POOLS).filter(isCursorState)
 
 /* ------------------------------------------------------------------- maths */
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v))
+const noTimestamp = (): number | null => null
 
 const toPath = (ring: Ring) =>
   'M' + ring.map(p => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L') + 'Z'
 
-const clone = (rings: Ring[]): Ring[] => rings.map(r => r.map(p => [p[0], p[1]] as [number, number]))
+const clone = (rings: Ring[]): Ring[] =>
+  rings.map(r => r.map((p): [number, number] => [p[0], p[1]]))
 
 /**
  * The mouth hangs off the eyes: centred under the pair, tilted with them, and pushed clear
@@ -1137,8 +1142,10 @@ export function mouthFrame(rings: Ring[], spec: number[]) {
 export function mouthPath(frame: { x: number; y: number; angle: number }, spec: number[]) {
   const ca = Math.cos(frame.angle)
   const sa = Math.sin(frame.angle)
-  const at = (lx: number, ly: number) =>
-    [frame.x + lx * ca - ly * sa, frame.y + lx * sa + ly * ca] as [number, number]
+  const at = (lx: number, ly: number): [number, number] => [
+    frame.x + lx * ca - ly * sa,
+    frame.y + lx * sa + ly * ca,
+  ]
   const a = at(-spec[0], 0)
   const c = at(0, spec[1])
   const b = at(spec[0], 0)
@@ -1261,8 +1268,8 @@ export interface CursorAvatarProps {
   autoBlink?: boolean
   autoExpression?: boolean
   paused?: boolean
-  /** Silhouette to wear. Defaults to the baked-in SHAPE. */
-  shape?: CursorShape
+  /** Silhouette to wear. Defaults to the baked-in mascot silhouette. */
+  silhouette?: CursorSilhouette
   gradient?: [string, string, string]
   eyeColor?: string
   title?: string | null
@@ -1296,7 +1303,7 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
       autoBlink = true,
       autoExpression = true,
       paused = false,
-      shape = SHAPE,
+      silhouette = DEFAULT_SILHOUETTE,
       gradient = DEFAULT_GRADIENT,
       eyeColor = "#ffffff",
       title,
@@ -1318,13 +1325,11 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
 
     // Respect the OS setting unless the caller states a preference explicitly.
     const prefersReducedMotion = useMemo(
-      () =>
-        typeof window !== 'undefined' &&
-        typeof window.matchMedia === 'function' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      () => globalThis.window?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
       []
     )
     const motionStrength = motion ?? (prefersReducedMotion ? 0 : 1)
+    const lastState: CursorState = state
 
     // Frame-loop state lives in a ref so prop changes never restart a morph.
     const engine = useRef({
@@ -1332,17 +1337,17 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
       target: EXPRESSIONS[0],
       currentMouth: MOUTHS[0].slice(),
       targetMouth: MOUTHS[0],
-      currentGaze: GAZE[0].slice() as number[],
-      targetGaze: GAZE[0] as number[],
+      currentGaze: [...GAZE[0]],
+      targetGaze: [...GAZE[0]],
       expression: 0,
       morph: 1,
       velocity: 0,
-      blinkStart: null as number | null,
-      spinStart: null as number | null,
+      blinkStart: noTimestamp(),
+      spinStart: noTimestamp(),
       spinDuration: 900,
       last: 0,
       stateStart: 0,
-      lastState: state as CursorState,
+      lastState,
       lastBodyTransform: '',
       props: {
         state,
@@ -1451,8 +1456,8 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
         const look = p.lookAround ?? 0.35
         const ox = g[0] * look
         const oy = g[1] * look
-        const rings = displayed(e).map(
-          ring => ring.map(pt => [pt[0] + ox, pt[1] + oy] as [number, number]) as Ring
+        const rings = displayed(e).map(ring =>
+          ring.map((pt): [number, number] => [pt[0] + ox, pt[1] + oy])
         )
         const gx = clamp(p.gaze?.x ?? 0, -1, 1) * GAZE_X
         const gy = clamp(p.gaze?.y ?? 0, -1, 1) * GAZE_Y
@@ -1508,11 +1513,11 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
         const bodyEl = bodyGroup.current
         if (bodyEl) {
           if (p.state !== e.lastState) {
-            e.lastState = p.state as CursorState
+            e.lastState = p.state
             e.stateStart = now
           }
           const transform = bodyTransform(
-            MOTION[p.state as CursorState] ?? {},
+            MOTION[p.state] ?? {},
             now - e.stateStart,
             p.motionStrength ?? 1
           )
@@ -1528,7 +1533,7 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
           confetti: confettiLayer.current,
           glyph: glyphLayer.current,
           bodyContent: bodyContent.current,
-          state: p.state as CursorState,
+          state: p.state,
           elapsed: now - e.stateStart,
           strength: p.motionStrength ?? 1,
           paint: paintRef.current,
@@ -1571,9 +1576,9 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
     const paintRef = useRef(paint)
     paintRef.current = paint
 
-    const dimension = typeof size === 'number' ? `${size}px` : size
-    const label = title === undefined ? `${shape.name} mascot` : title
-    const body = shape.body.replace(/\{\{GRADIENT\}\}/g, `url(#${uid}-grad)`)
+    const dimension = size.constructor === Number ? `${size}px` : size
+    const label = title === undefined ? `${silhouette.name} mascot` : title
+    const body = silhouette.body.replace(/\{\{GRADIENT\}\}/g, `url(#${uid}-grad)`)
 
     return (
       <svg
@@ -1593,11 +1598,11 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
             <stop offset="100%" stopColor={gradient[2]} />
           </linearGradient>
           {/* The fit goes on the clipPath itself: a <g> inside one is ignored by browsers,
-              which is also why shape.clip is pre-flattened to bare shapes. */}
+              which is also why silhouette.clip is pre-flattened to bare shapes. */}
           <clipPath
             id={`${uid}-clip`}
-            transform={shape.fit || undefined}
-            dangerouslySetInnerHTML={{ __html: shape.clip }}
+            transform={silhouette.fit || undefined}
+            dangerouslySetInnerHTML={{ __html: silhouette.clip }}
           />
         </defs>
         <g transform={flip ? `translate(${FACE_BOX} 0) scale(-1 1)` : undefined}>
@@ -1608,9 +1613,9 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
               same motion but is not faded with them, since it replaces them. */}
           <g ref={bodyGroup}>
           <g ref={bodyContent}>
-          <g transform={shape.fit || undefined} dangerouslySetInnerHTML={{ __html: body }} />
+          <g transform={silhouette.fit || undefined} dangerouslySetInnerHTML={{ __html: body }} />
           <g clipPath={`url(#${uid}-clip)`}>
-            <g transform={anchorTransform(shape.anchor)}>
+            <g transform={anchorTransform(silhouette.anchor)}>
               <path ref={eye0} fill={eyeColor} />
               <path ref={eye1} fill={eyeColor} />
               {showMouth && (
@@ -1639,13 +1644,10 @@ export const CursorAvatar = React.forwardRef<CursorAvatarHandle, CursorAvatarPro
 function displayed(e: { current: Ring[]; target: Ring[]; morph: number }): Ring[] {
   const m = clamp(e.morph, 0, 1)
   return e.current.map((ring, eye) =>
-    ring.map(
-      (p, i) =>
-        [p[0] + (e.target[eye][i][0] - p[0]) * m, p[1] + (e.target[eye][i][1] - p[1]) * m] as [
-          number,
-          number
-        ]
-    )
+    ring.map((p, i): [number, number] => [
+      p[0] + (e.target[eye][i][0] - p[0]) * m,
+      p[1] + (e.target[eye][i][1] - p[1]) * m,
+    ])
   )
 }
 

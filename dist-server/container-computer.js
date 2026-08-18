@@ -7,14 +7,13 @@
 // typing, screenshots, accessibility, or window discovery.
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { augmentedPath } from "./env-path.js";
 import { DATA_DIR } from "./config.js";
+import { SPAWNED_PROXIES } from "./proxy-paths.js";
 const run = promisify(execFile);
 const SCREENSHOT_STATUS_TTL_MS = 10_000;
 export const CUA_DRIVER_VERSION = "0.20.0";
@@ -558,13 +557,7 @@ export async function containerComputerScreenshot(runner = sh, platform = proces
     }
 }
 let screenshotStatusCache = null;
-const containerMcpPath = (() => {
-    const ts = join(dirname(fileURLToPath(import.meta.url)), "container-mcp.ts");
-    return existsSync(ts) ? ts : ts.replace(/\.ts$/, ".js");
-})();
-/** Spawn contract handed directly to agent runtimes. The tiny host wrapper
- * only preserves stdio through the container CLI; Cua Driver owns the MCP
- * protocol and every computer tool. */
+const containerMcpPath = SPAWNED_PROXIES.containerMcp;
 export function containerComputerMcp(runtime) {
     return {
         command: process.execPath,

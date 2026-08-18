@@ -8,7 +8,7 @@ function boxFetch(cfg, path, opts = {}) {
         headers: {
             authorization: `Bearer ${cfg.box?.token}`,
             "content-type": "application/json",
-            ...(opts.headers ?? {}),
+            ...opts.headers,
         },
     });
 }

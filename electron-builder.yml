@@ -2,6 +2,13 @@ appId: com.operabot.app
 productName: OperaBot
 artifactName: OperaBot-${version}-${arch}.${ext}
 
+# In-app auto-update reads latest-mac.yml + the .zip (macOS) or latest.yml +
+# the NSIS .exe (Windows) from this PUBLIC releases repo (separate from the
+# source repo). Public → no token on users' machines. Baked into
+# app-update.yml; both metadata files are emitted here even with
+# --publish never, and must be uploaded to the GitHub release alongside the
+# artifacts — a release missing latest.yml leaves every Windows install
+# stranded on its installed version.
 # In-app auto-update is UIT — OperaBot draait voorlopig alleen lokaal.
 #
 # Aanzetten zodra je gaat distribueren: maak een PUBLIEKE releases-repo
@@ -46,6 +53,10 @@ extraResources:
     to: ui
   - from: dist-server
     to: server
+  # the companion sidecar — a separate process because it is the only part
+  # of the app that listens off this machine, and it stays off until asked
+  - from: dist-companion
+    to: companion
 
 mac:
   target:

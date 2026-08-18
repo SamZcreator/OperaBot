@@ -7,15 +7,14 @@
 // typing, screenshots, accessibility, or window discovery.
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { augmentedPath } from "./env-path.ts";
 import { DATA_DIR } from "./config.ts";
+import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 
 const run = promisify(execFile);
 const SCREENSHOT_STATUS_TTL_MS = 10_000;
@@ -706,7 +705,9 @@ export async function containerComputerAction(
   return containerComputerStatus(runner, platform);
 }
 
-function wholeScreenshot(bytes: Buffer): { ok: boolean; mime: "image/png" | "image/jpeg" } {
+type ScreenshotCheck = { ok: boolean; mime: "image/png" | "image/jpeg" };
+
+function wholeScreenshot(bytes: Buffer): ScreenshotCheck {
   if (bytes.length < 512) return { ok: false, mime: "image/png" };
   const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
   if (png) {
@@ -767,19 +768,18 @@ export async function containerComputerScreenshot(
 
 let screenshotStatusCache: { status: ContainerComputerStatus; expiresAt: number } | null = null;
 
-const containerMcpPath = (() => {
-  const ts = join(dirname(fileURLToPath(import.meta.url)), "container-mcp.ts");
-  return existsSync(ts) ? ts : ts.replace(/\.ts$/, ".js");
-})();
+const containerMcpPath = SPAWNED_PROXIES.containerMcp;
 
 /** Spawn contract handed directly to agent runtimes. The tiny host wrapper
  * only preserves stdio through the container CLI; Cua Driver owns the MCP
  * protocol and every computer tool. */
-export function containerComputerMcp(runtime: Runtime): {
+type ContainerMcpLaunch = {
   command: string;
   args: string[];
   env: Record<string, string>;
-} {
+};
+
+export function containerComputerMcp(runtime: Runtime): ContainerMcpLaunch {
   return {
     command: process.execPath,
     args: [containerMcpPath, runtime, CONTAINER, CUA_SOCKET],
@@ -842,6 +842,6 @@ export function setupCommands(
  * containerComputerMcp(). */
 export function computerProxyEnv(
   computer: { boxId?: string; token?: string },
-): Record<string, string> {
+): NodeJS.ProcessEnv {
   return { OGB_BOX_ID: computer.boxId ?? "", OGB_BOX_TOKEN: computer.token ?? "" };
 }

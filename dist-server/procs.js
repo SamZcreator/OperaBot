@@ -15,24 +15,30 @@ export function resolveCli(cli, args = []) {
 }
 export function spawnCli(cli, args, opts) {
     const resolved = resolveCli(cli, args);
-    return spawn(resolved.command, resolved.args, {
+    const child = spawn(resolved.command, resolved.args, {
         ...opts,
         // posix: own process group so kill(-pid) reaps child MCP servers;
         // win32: taskkill /T does the reaping instead (see killCliTree)
         ...(process.platform === "win32" ? { windowsHide: true } : { detached: true }),
     }); // callers always pipe all three
+    // A write to a dying child's stdin fails differently per platform, and one
+    // of the ways is fatal. On POSIX the kill is synchronous, the stream is
+    // already destroyed by the time anything writes, and the write throws into
+    // the caller's try/catch. On Windows killCliTree goes through taskkill — a
+    // subprocess — so there is a window where the child is dead but its pipe is
+    // not, and a write during it errors *asynchronously* on the stream. No
+    // driver listens for that, an unlistened stream error is an uncaught
+    // exception, and the whole harness exits over one dead CLI. The error
+    // carries no information the drivers don't already get from `close`, which
+    // is where every one of them settles the turn — so it is swallowed, not
+    // logged.
+    child.stdin?.on("error", () => { });
+    return child;
 }
 export function execCli(cli, args, opts, cb) {
     const resolved = resolveCli(cli, args);
     execFile(resolved.command, resolved.args, { ...opts, windowsHide: true }, (err, stdout) => cb(err, typeof stdout === "string" ? stdout : String(stdout)));
 }
-/** Human wording for a failed CLI spawn.
- *
- * Node reports these as bare errno strings — "spawn grok ENOENT" — which
- * reads as a crash. On a CLI spawn the common codes mean exactly one thing
- * each, and both are setup problems the user can fix, so say which. The
- * `setup` flag lets the UI offer "Install" instead of a "Retry" that is
- * guaranteed to fail the same way. */
 export function describeSpawnFailure(err, cli) {
     if (err.code === "ENOENT")
         return { message: `\`${cli}\` isn't installed, or isn't on this app's PATH`, setup: true };

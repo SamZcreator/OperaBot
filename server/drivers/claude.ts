@@ -5,14 +5,13 @@
 // continues across turns via --resume <sessionId> (the resumeCursor).
 //
 // Integrations become MCP servers on the CLI:
-//   - Composio Connect (connected apps → tools) over streamable HTTP
+//   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - the bot's cloud computer (box.ascii.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-box bridge
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { DATA_DIR } from "../config.ts";
 import { augmentedPath } from "../env-path.ts";
@@ -20,6 +19,7 @@ import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli 
 
 import type {
   DriverCreateInput,
+  ModelCatalog,
   ProviderDriver,
   ProviderInstance,
   ProviderSnapshot,
@@ -29,7 +29,9 @@ import type {
 } from "../contracts.ts";
 import { computerProxyEnv } from "../container-computer.ts";
 import { newEventId, newId } from "../contracts.ts";
+import { applyClaudeInject, mergeLocalInject } from "./local-inject.ts";
 import { appendNative } from "./native.ts";
+import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 
 /** Whether `claude` has been signed in.
  *
@@ -64,11 +66,15 @@ export function claudeSignedIn(
  * Keeping the probe and turn environments identical prevents setup from
  * claiming an API-key login that the turn itself would deliberately remove.
  */
-function claudeEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
-  delete env.ANTHROPIC_API_KEY;
+function claudeEnvironment(
+  model?: string | null,
+  source: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...source, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;
+  const applied = applyClaudeInject(env, model);
+  if (!applied.injected) delete env.ANTHROPIC_API_KEY;
   return env;
 }
 
@@ -80,7 +86,7 @@ export interface ClaudeConfig {
 }
 
 // model catalog ported from upstream packages/contracts/src/model.ts
-const MODELS = {
+export const STATIC_CLAUDE_MODELS: ModelCatalog = {
   default: "claude-sonnet-5",
   options: [
     { id: "claude-fable-5", label: "Claude Fable 5" },
@@ -90,15 +96,63 @@ const MODELS = {
   ],
 };
 
-// proxy entry files live next to this one as .ts in dev (node type
-// stripping) and .js in the compiled dist-server the packaged app ships
-const proxyPath = (basename: string) => {
-  const ts = join(dirname(fileURLToPath(import.meta.url)), "..", `${basename}.ts`);
-  return existsSync(ts) ? ts : ts.replace(/\.ts$/, ".js");
-};
-const PROXY_PATH = proxyPath("computer-proxy");
-const PERM_PROXY_PATH = proxyPath("permission-proxy");
-const DWEB_PROXY_PATH = proxyPath("drivers/dweb-proxy");
+const CLAUDE_MODEL_ID = /^[a-z0-9][a-z0-9._:/-]*$/i;
+
+function claudeConfigDir(env: Record<string, string | undefined>): string {
+  if (env.CLAUDE_CONFIG_DIR) return env.CLAUDE_CONFIG_DIR;
+  return join(env.HOME || env.USERPROFILE || homedir(), ".claude");
+}
+
+function extrasFromUnknown(value: unknown): Array<{ id: string; label: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") {
+      return CLAUDE_MODEL_ID.test(item) ? [{ id: item, label: item }] : [];
+    }
+    if (!item || typeof item !== "object") return [];
+    const row = item as { id?: unknown; model?: unknown; slug?: unknown; name?: unknown; displayName?: unknown; label?: unknown };
+    const id = [row.id, row.model, row.slug].find((candidate): candidate is string => typeof candidate === "string");
+    if (!id || !CLAUDE_MODEL_ID.test(id)) return [];
+    const label = [row.name, row.displayName, row.label].find((candidate): candidate is string => typeof candidate === "string");
+    return [{ id, label: label || id }];
+  });
+}
+
+/** Extra ids from ~/.claude/settings.json. Official cloud rows stay untagged. */
+export function readClaudeModelCatalog(env: Record<string, string | undefined> = process.env) {
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(readFileSync(join(claudeConfigDir(env), "settings.json"), "utf8")) as Record<string, unknown>;
+  } catch {
+    return STATIC_CLAUDE_MODELS;
+  }
+
+  const extras = [
+    ...extrasFromUnknown(settings.availableModels),
+    ...extrasFromUnknown(settings.customModels),
+    ...extrasFromUnknown(settings.extraModels),
+  ];
+  const nestedEnv = settings.env && typeof settings.env === "object" ? (settings.env as Record<string, unknown>) : {};
+  const envModel = nestedEnv.ANTHROPIC_MODEL ?? env.ANTHROPIC_MODEL;
+  if (typeof envModel === "string") extras.push(...extrasFromUnknown([envModel]));
+  if (typeof settings.model === "string") extras.push(...extrasFromUnknown([settings.model]));
+
+  const options = STATIC_CLAUDE_MODELS.options.map((option) => ({ ...option }));
+  const seen = new Set(options.map((option) => option.id));
+  for (const extra of extras) {
+    if (seen.has(extra.id)) continue;
+    seen.add(extra.id);
+    options.push({ id: extra.id, label: extra.label, custom: true });
+  }
+  return { default: STATIC_CLAUDE_MODELS.default, options };
+}
+
+// Resolved from the server root, never relative to this file: bundling inlines
+// this module into an entry one directory up, so a `".."` here would climb too
+// far. See server/proxy-paths.ts.
+const PROXY_PATH = SPAWNED_PROXIES.computer;
+const PERM_PROXY_PATH = SPAWNED_PROXIES.permission;
+const DWEB_PROXY_PATH = SPAWNED_PROXIES.dweb;
 // in the packaged app process.execPath is the Electron binary — this env
 // makes it behave as plain node for the spawned MCP proxies (harmless in dev)
 const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
@@ -117,6 +171,8 @@ interface Ask {
   input: Record<string, unknown>;
   at: number;
 }
+type AskBehavior = "allow" | "deny" | "answer";
+type AskResolutionSource = "user" | "timeout" | "system";
 
 const DENY_TIMEOUT_NOTE =
   "OperaBot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
@@ -140,11 +196,14 @@ export function permissionSocketPath(threadId: string) {
 function createPermissionBroker(opts: {
   socketPath: string;
   onAsk: (ask: Ask) => void;
-  onResolve: (resolved: Ask & { behavior: string; source: string }) => void;
+  onResolve: (resolved: Ask & { behavior: AskBehavior; source: AskResolutionSource }) => void;
   timeoutMs?: number;
 }) {
   const timeoutMs = opts.timeoutMs ?? 15 * 60_000;
-  const pending = new Map<string, { ask: Ask; finish: (behavior: string, message: string | undefined, source: string) => void }>();
+  const pending = new Map<
+    string,
+    { ask: Ask; finish: (behavior: AskBehavior, message: string | undefined, source: AskResolutionSource) => void }
+  >();
   try {
     unlinkSync(opts.socketPath);
   } catch {}
@@ -167,7 +226,7 @@ function createPermissionBroker(opts: {
         const askId = String(msg.id ?? newId());
         const kind = msg.kind === "question" ? ("question" as const) : ("permission" as const);
         const ask: Ask = { id: askId, kind, tool: msg.tool ?? "tool", input: msg.input ?? {}, at: Date.now() };
-        const finish = (behavior: string, message: string | undefined, source: string) => {
+        const finish = (behavior: AskBehavior, message: string | undefined, source: AskResolutionSource) => {
           if (!pending.delete(askId)) return;
           clearTimeout(timer);
           try {
@@ -196,18 +255,17 @@ function createPermissionBroker(opts: {
   });
   server.listen(opts.socketPath);
   return {
-    answer(askId: string, behavior: string, message?: string): boolean {
+    answer(askId: string, behavior: AskBehavior, message?: string): boolean {
       const p = pending.get(askId);
       if (!p) return false;
-      const valid = p.ask.kind === "question" ? ["answer"] : ["allow", "deny"];
-      if (!valid.includes(behavior)) return false;
+      if (p.ask.kind === "question" ? behavior !== "answer" : behavior === "answer") return false;
       p.finish(behavior, message, "user");
       return true;
     },
     close() {
       for (const p of [...pending.values()]) {
-        if (p.ask.kind === "question") p.finish("answer", "OperaBot: the turn is ending — wrap up.", "shutdown");
-        else p.finish("deny", "OperaBot: the turn ended", "shutdown");
+        if (p.ask.kind === "question") p.finish("answer", "OperaBot: the turn is ending — wrap up.", "system");
+        else p.finish("deny", "OperaBot: the turn ended", "system");
       }
       try {
         server.close();
@@ -257,12 +315,23 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     docsUrl: "https://claude.com/claude-code",
     signInCommand: "claude",
   },
-  models: MODELS,
+  models: STATIC_CLAUDE_MODELS,
   decodeConfig,
   defaultConfig: () => decodeConfig({}),
 
   async create(input: DriverCreateInput<ClaudeConfig>): Promise<ProviderInstance> {
     const { instanceId, config } = input;
+    const catalogEnv: Record<string, string | undefined> = { ...process.env, ...input.environment };
+    let models = STATIC_CLAUDE_MODELS;
+    const refreshModels = async () => {
+      try {
+        const resolved = await mergeLocalInject(readClaudeModelCatalog(catalogEnv), catalogEnv);
+        if (resolved.options.length) models = resolved;
+      } catch {
+        // Keep the last usable catalog when settings.json is unreadable.
+      }
+    };
+    await refreshModels();
     const listeners = new Set<RuntimeEventListener>();
     // one active turn per thread; a second send while busy is a caller bug
     const active = new Map<string, { stop: () => void; turnId: string; broker?: ReturnType<typeof createPermissionBroker> }>();
@@ -297,7 +366,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       ];
       if (sessionId) args.push("--resume", sessionId);
       else args.push("--session-id", newSessionId!);
-      if (turn.model) args.push("--model", turn.model);
+      const turnEnvironment: NodeJS.ProcessEnv = { ...process.env, ...input.environment };
+      const injected = applyClaudeInject({ ...turnEnvironment }, turn.model);
+      if (injected.model) args.push("--model", injected.model);
       if (turn.effort) args.push("--effort", turn.effort);
       if (turn.system) args.push("--append-system-prompt", turn.system);
 
@@ -305,12 +376,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // acceptEdits run silently denies anything unlisted)
       const mcpServers: Record<string, unknown> = {};
       const allowed: string[] = [];
-      if (turn.integrations?.composio?.key) {
-        mcpServers.composio = {
-          type: "http",
-          url: turn.integrations.composio.url || "https://connect.composio.dev/mcp",
-          headers: { "x-consumer-api-key": turn.integrations.composio.key },
-        };
+      if (turn.integrations?.composio) {
+        mcpServers.composio = { ...turn.integrations.composio };
         allowed.push("mcp__composio");
       }
       if (turn.integrations?.computer) {
@@ -393,7 +460,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         args.push("--allowedTools", allowed.join(","));
       }
 
-      const env = claudeEnvironment();
+      const env = claudeEnvironment(turn.model, turnEnvironment);
 
       const child = spawnCli(config.cli, args, {
         cwd: turn.cwd ?? homedir(),
@@ -402,7 +469,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       let settled = false;
-      const settle = (ok: boolean, stopReason: string | null, cost: number | null = null) => {
+      const settle = (
+        ok: boolean,
+        stopReason: string | null,
+        cost: number | null = null,
+        usage?: { input: number; output: number },
+      ) => {
         if (settled) return;
         settled = true;
         broker?.close();
@@ -413,7 +485,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           } catch {}
         }
         active.delete(threadId);
-        emit({ ...base(threadId, turnId), type: "turn.completed", ok, stopReason, cost });
+        emit({ ...base(threadId, turnId), type: "turn.completed", ok, stopReason, cost, ...(usage ? { usage } : {}) });
       };
 
       // token streaming: true while --include-partial-messages is delivering
@@ -486,7 +558,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             }
             break;
           case "result":
-            settle(o.is_error !== true, o.stop_reason ?? o.terminal_reason ?? null, o.total_cost_usd ?? null);
+            // result.usage is this invocation's total — one process per turn,
+            // so it is the turn's figure. cache reads count as input: they
+            // are billed (at the cache rate) and they fill the window.
+            settle(
+              o.is_error !== true,
+              o.stop_reason ?? o.terminal_reason ?? null,
+              o.total_cost_usd ?? null,
+              o.usage
+                ? {
+                    input: (o.usage.input_tokens || 0) + (o.usage.cache_read_input_tokens || 0) + (o.usage.cache_creation_input_tokens || 0),
+                    output: o.usage.output_tokens || 0,
+                  }
+                : undefined,
+            );
             break;
         }
       };
@@ -541,7 +626,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     };
 
     const snapshot = async (): Promise<ProviderSnapshot> => {
-      const env = claudeEnvironment();
+      const env = claudeEnvironment(undefined, { ...process.env, ...input.environment });
       const version = await new Promise<string | null>((resolve) => {
         execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) =>
           resolve(err ? null : stdout.trim()),
@@ -549,7 +634,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
       if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
       const authenticated = await claudeSignedIn(config.cli, env);
-      return { state: "available", version, authenticated };
+      // claudeEnvironment strips ANTHROPIC_API_KEY, so turns run on the
+      // CLI's own login (Pro/Max): the cost it reports is what the call
+      // WOULD bill, not a charge
+      return { state: "available", version, authenticated, billing: "subscription" };
     };
 
     return {
@@ -557,7 +645,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       driverKind: DRIVER_KIND,
       displayName: input.displayName,
       enabled: input.enabled,
-      models: MODELS,
+      get models() {
+        return models;
+      },
+      refreshModels,
       snapshot,
       adapter: {
         provider: DRIVER_KIND,
@@ -571,12 +662,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         sendTurn,
         interruptTurn: async (threadId) => active.get(threadId)?.stop(),
         respondToRequest: async (threadId, requestId, decision) => {
+          // fail-closed by construction: no broker, or an ask that already
+          // timed out / settled, is `unavailable` — the caller denies
           const broker = active.get(threadId)?.broker;
-          if (!broker) throw new Error("no active turn with a permission broker on this thread");
+          if (!broker) return "unavailable";
           const behavior = decision.behavior === "answer" ? "answer" : decision.behavior;
-          if (!broker.answer(requestId, behavior, decision.message)) {
-            throw new Error("no such pending request (it may have timed out)");
-          }
+          if (!broker.answer(requestId, behavior, decision.message)) return "unavailable";
+          return behavior === "allow" ? "allowed-once" : behavior === "answer" ? "answered" : "rejected";
         },
         hasSession: (threadId) => active.has(threadId),
         stopAll: async () => {

@@ -7,7 +7,7 @@ export const MASQUE_STATES = CURSOR_STATES;
 
 /** CursorAvatar ships French group labels; the app shows these instead. The
  * memberships mirror its STATE_GROUPS exactly. */
-export const STATE_GROUPS: Record<string, MasqueState[]> = {
+export const STATE_GROUPS = {
   Lifecycle: ["sleeping", "waking", "idle", "listening", "thinking", "searching", "working"],
   Reactions: [
     "excited",
@@ -43,7 +43,7 @@ export const STATE_GROUPS: Record<string, MasqueState[]> = {
     "bouncing",
     "powering-down",
   ],
-};
+} satisfies Record<string, MasqueState[]>;
 
 export const MASQUE_COLOR_NAMES = [
   "green",
@@ -60,7 +60,7 @@ export const MASQUE_COLOR_NAMES = [
 
 export type MasqueColor = (typeof MASQUE_COLOR_NAMES)[number];
 
-export const MASQUE_COLORS: Record<MasqueColor, string> = {
+export const MASQUE_COLORS = {
   green: "#009957",
   blue: "#377FE6",
   red: "#D94B52",
@@ -71,7 +71,7 @@ export const MASQUE_COLORS: Record<MasqueColor, string> = {
   yellow: "#D8A729",
   teal: "#01A492",
   coral: "#E5634E",
-};
+} satisfies Record<MasqueColor, string>;
 
 export const MASQUE_MOTIONS = [
   "arrive",
@@ -96,7 +96,11 @@ export type MasqueMotion = "none" | (typeof MASQUE_MOTIONS)[number];
  * they are translated on read rather than migrated in place — a bot's stored
  * face should survive a downgrade too.
  */
-const LEGACY_STATES: Record<string, MasqueState> = {
+interface LegacyStates {
+  [state: string]: MasqueState;
+}
+
+const LEGACY_STATES: LegacyStates = {
   deadpan: "idle",
   friendly: "happy",
   focused: "working",

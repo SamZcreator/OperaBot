@@ -13,21 +13,17 @@
 // is never a security contract). session/load REPLAYS history as ordinary
 // session/update notifications, so updates are double-gated: nothing emits
 // before the prompt is sent, and `_meta.isReplay` updates are dropped.
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../../procs.js";
 import { newEventId, newId } from "../../contracts.js";
 import { computerProxyEnv } from "../../container-computer.js";
 import { augmentedPath } from "../../env-path.js";
-// the computer proxy entry: .ts in dev (node type stripping), .js in the
-// compiled dist-server the packaged app ships
-const COMPUTER_PROXY_PATH = (() => {
-    const ts = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "computer-proxy.ts");
-    return existsSync(ts) ? ts : ts.replace(/\.ts$/, ".js");
-})();
+// Resolved from the server root, never relative to this file: bundling inlines
+// this module two directories up, so the `".."` pair here would climb past the
+// packaged server dir entirely. See server/proxy-paths.ts.
+const COMPUTER_PROXY_PATH = SPAWNED_PROXIES.computer;
 import { appendNative } from "../native.js";
+import { SPAWNED_PROXIES } from "../../proxy-paths.js";
 const INIT_TIMEOUT = 20_000;
 const SESSION_CONFIG_TIMEOUT = 20_000; // configureSession's per-request default
 const NEW_SESSION_TIMEOUT = 30_000;
@@ -60,7 +56,11 @@ export function createAcpDriver(support) {
     const DENY_TIMEOUT_NOTE = "OperaBot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
     return {
         driverKind: DRIVER_KIND,
-        metadata: { displayName: support.displayName, supportsMultipleInstances: true },
+        metadata: {
+            displayName: support.displayName,
+            supportsMultipleInstances: true,
+            access: support.access ?? "subscription",
+        },
         install: support.install,
         models: support.models,
         decodeConfig,
@@ -119,6 +119,15 @@ export function createAcpDriver(support) {
                 if (agents) {
                     servers.push({ name: "agents", command: agents.command, args: agents.args, env: acpEnv(agents.env) });
                 }
+                const composio = turn.integrations?.composio;
+                if (composio) {
+                    servers.push({
+                        name: "composio",
+                        command: composio.command,
+                        args: composio.args,
+                        env: acpEnv(composio.env),
+                    });
+                }
                 // The bot's computer, mounted exactly like the Claude driver does.
                 // Cloud boxes use the REST adapter; host and sandbox Cua connections
                 // expose Cua Driver's official MCP server directly.
@@ -149,8 +158,12 @@ export function createAcpDriver(support) {
                 const turnId = newId();
                 const cwd = turn.cwd ?? config.workspace ?? homedir();
                 const env = childEnv();
+                const resolvedModel = support.resolveTurnModel?.(turn.model, env);
+                const cliTurn = resolvedModel !== undefined && resolvedModel !== turn.model
+                    ? { ...turn, model: resolvedModel }
+                    : turn;
                 const mcpServers = acpMcpServers(turn);
-                const child = spawnCli(config.cli, support.spawnArgs(config, turn), {
+                const child = spawnCli(config.cli, support.spawnArgs(config, cliTurn), {
                     cwd,
                     env,
                     stdio: ["pipe", "pipe", "pipe"],
@@ -189,7 +202,7 @@ export function createAcpDriver(support) {
                     if (interruptTimer)
                         clearTimeout(interruptTimer);
                     for (const finish of [...asks.values()])
-                        finish("cancel");
+                        finish("cancel", "system");
                     for (const p of rpcPending.values()) {
                         if (p.timer)
                             clearTimeout(p.timer);
@@ -233,7 +246,7 @@ export function createAcpDriver(support) {
                     const tool = kind === "execute" ? "shell" : kind === "edit" ? "edit" : kind || "tool";
                     const summary = String(toolCall.rawInput?.command ?? toolCall.title ?? tool).slice(0, 200);
                     const requestId = newId();
-                    const finish = (behavior) => {
+                    const finish = (behavior, source = "user") => {
                         if (!asks.delete(requestId))
                             return;
                         clearTimeout(timer);
@@ -251,12 +264,12 @@ export function createAcpDriver(support) {
                             type: "request.resolved",
                             requestId,
                             behavior: optionId && behavior === "allow" ? "allow" : "deny",
-                            source: optionId ? "user" : "system",
+                            source: optionId ? source : "system",
                         });
                     };
                     const timer = setTimeout(() => {
                         emit({ ...base(threadId, turnId), type: "runtime.error", message: DENY_TIMEOUT_NOTE });
-                        finish("deny");
+                        finish("deny", "timeout");
                     }, 15 * 60_000);
                     timer.unref?.();
                     asks.set(requestId, finish);
@@ -439,7 +452,7 @@ export function createAcpDriver(support) {
                                 ...base(threadId, turnId),
                                 type: "session.started",
                                 sessionId,
-                                model: selectedModel ?? init?._meta?.modelState?.currentModelId ?? turn.model ?? null,
+                                model: selectedModel ?? init?._meta?.modelState?.currentModelId ?? cliTurn.model ?? null,
                             });
                         };
                         try {
@@ -448,12 +461,12 @@ export function createAcpDriver(support) {
                                 const currentOf = (r) => (Array.isArray(r?.configOptions) ? r.configOptions : []).find((o) => o?.id === configId)
                                     ?.currentValue ?? null;
                                 selectedModel = currentOf(sessionResult);
-                                if (turn.model && turn.model !== selectedModel) {
-                                    selectedModel = currentOf(await request("session/set_config_option", { sessionId, configId, value: turn.model }, INIT_TIMEOUT));
+                                if (cliTurn.model && cliTurn.model !== selectedModel) {
+                                    selectedModel = currentOf(await request("session/set_config_option", { sessionId, configId, value: cliTurn.model }, INIT_TIMEOUT));
                                     // an agent that answers OK but keeps its old model is worse than
                                     // one that errors: it burns a paid turn on the wrong thing
-                                    if (selectedModel !== turn.model) {
-                                        throw new Error(`${DRIVER_KIND} did not switch to ${turn.model} (still ${selectedModel ?? "unknown"})`);
+                                    if (selectedModel !== cliTurn.model) {
+                                        throw new Error(`${DRIVER_KIND} did not switch to ${cliTurn.model} (still ${selectedModel ?? "unknown"})`);
                                     }
                                 }
                             }
@@ -462,7 +475,7 @@ export function createAcpDriver(support) {
                                     request: (method, params, timeoutMs) => request(method, params, timeoutMs ?? SESSION_CONFIG_TIMEOUT),
                                     sessionId,
                                     config,
-                                    turn,
+                                    turn: cliTurn,
                                 });
                             }
                         }
@@ -548,6 +561,7 @@ export function createAcpDriver(support) {
                         sessionModelSwitch: "unsupported",
                         agentsMcp: true,
                         computerMcp: true,
+                        composioMcp: true,
                         effortLevels: support.effortLevels,
                     },
                     sendTurn,
@@ -556,8 +570,9 @@ export function createAcpDriver(support) {
                         const turn = active.get(threadId);
                         const finish = turn?.asks.get(requestId);
                         if (!finish)
-                            throw new Error("no such pending request");
-                        finish(decision.behavior === "allow" ? "allow" : "deny");
+                            return "unavailable"; // settled, timed out, or turn gone
+                        finish(decision.behavior === "allow" ? "allow" : "deny", "user");
+                        return decision.behavior === "allow" ? "allowed-once" : "rejected";
                     },
                     hasSession: (threadId) => active.has(threadId),
                     stopAll: async () => {

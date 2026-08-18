@@ -5,20 +5,21 @@
 // continues across turns via --resume <sessionId> (the resumeCursor).
 //
 // Integrations become MCP servers on the CLI:
-//   - Composio Connect (connected apps → tools) over streamable HTTP
+//   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - the bot's cloud computer (box.ascii.dev) via server/computer-proxy.ts
 //     — screenshot/exec/open_url, the CUA-on-the-box bridge
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 import { DATA_DIR } from "../config.js";
 import { augmentedPath } from "../env-path.js";
 import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.js";
 import { computerProxyEnv } from "../container-computer.js";
 import { newEventId, newId } from "../contracts.js";
+import { applyClaudeInject, mergeLocalInject } from "./local-inject.js";
 import { appendNative } from "./native.js";
+import { SPAWNED_PROXIES } from "../proxy-paths.js";
 /** Whether `claude` has been signed in.
  *
  * Credential storage is deliberately not inspected here. Claude Code uses the
@@ -46,16 +47,18 @@ export function claudeSignedIn(cli, env, run = execCli) {
  * Keeping the probe and turn environments identical prevents setup from
  * claiming an API-key login that the turn itself would deliberately remove.
  */
-function claudeEnvironment() {
-    const env = { ...process.env, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
-    delete env.ANTHROPIC_API_KEY;
+function claudeEnvironment(model, source = process.env) {
+    const env = { ...source, PATH: augmentedPath(), NPM_CONFIG_LOGLEVEL: "error" };
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
+    const applied = applyClaudeInject(env, model);
+    if (!applied.injected)
+        delete env.ANTHROPIC_API_KEY;
     return env;
 }
 const DRIVER_KIND = "claudeAgent";
 // model catalog ported from upstream packages/contracts/src/model.ts
-const MODELS = {
+export const STATIC_CLAUDE_MODELS = {
     default: "claude-sonnet-5",
     options: [
         { id: "claude-fable-5", label: "Claude Fable 5" },
@@ -64,15 +67,65 @@ const MODELS = {
         { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
     ],
 };
-// proxy entry files live next to this one as .ts in dev (node type
-// stripping) and .js in the compiled dist-server the packaged app ships
-const proxyPath = (basename) => {
-    const ts = join(dirname(fileURLToPath(import.meta.url)), "..", `${basename}.ts`);
-    return existsSync(ts) ? ts : ts.replace(/\.ts$/, ".js");
-};
-const PROXY_PATH = proxyPath("computer-proxy");
-const PERM_PROXY_PATH = proxyPath("permission-proxy");
-const DWEB_PROXY_PATH = proxyPath("drivers/dweb-proxy");
+const CLAUDE_MODEL_ID = /^[a-z0-9][a-z0-9._:/-]*$/i;
+function claudeConfigDir(env) {
+    if (env.CLAUDE_CONFIG_DIR)
+        return env.CLAUDE_CONFIG_DIR;
+    return join(env.HOME || env.USERPROFILE || homedir(), ".claude");
+}
+function extrasFromUnknown(value) {
+    if (!Array.isArray(value))
+        return [];
+    return value.flatMap((item) => {
+        if (typeof item === "string") {
+            return CLAUDE_MODEL_ID.test(item) ? [{ id: item, label: item }] : [];
+        }
+        if (!item || typeof item !== "object")
+            return [];
+        const row = item;
+        const id = [row.id, row.model, row.slug].find((candidate) => typeof candidate === "string");
+        if (!id || !CLAUDE_MODEL_ID.test(id))
+            return [];
+        const label = [row.name, row.displayName, row.label].find((candidate) => typeof candidate === "string");
+        return [{ id, label: label || id }];
+    });
+}
+/** Extra ids from ~/.claude/settings.json. Official cloud rows stay untagged. */
+export function readClaudeModelCatalog(env = process.env) {
+    let settings = {};
+    try {
+        settings = JSON.parse(readFileSync(join(claudeConfigDir(env), "settings.json"), "utf8"));
+    }
+    catch {
+        return STATIC_CLAUDE_MODELS;
+    }
+    const extras = [
+        ...extrasFromUnknown(settings.availableModels),
+        ...extrasFromUnknown(settings.customModels),
+        ...extrasFromUnknown(settings.extraModels),
+    ];
+    const nestedEnv = settings.env && typeof settings.env === "object" ? settings.env : {};
+    const envModel = nestedEnv.ANTHROPIC_MODEL ?? env.ANTHROPIC_MODEL;
+    if (typeof envModel === "string")
+        extras.push(...extrasFromUnknown([envModel]));
+    if (typeof settings.model === "string")
+        extras.push(...extrasFromUnknown([settings.model]));
+    const options = STATIC_CLAUDE_MODELS.options.map((option) => ({ ...option }));
+    const seen = new Set(options.map((option) => option.id));
+    for (const extra of extras) {
+        if (seen.has(extra.id))
+            continue;
+        seen.add(extra.id);
+        options.push({ id: extra.id, label: extra.label, custom: true });
+    }
+    return { default: STATIC_CLAUDE_MODELS.default, options };
+}
+// Resolved from the server root, never relative to this file: bundling inlines
+// this module into an entry one directory up, so a `".."` here would climb too
+// far. See server/proxy-paths.ts.
+const PROXY_PATH = SPAWNED_PROXIES.computer;
+const PERM_PROXY_PATH = SPAWNED_PROXIES.permission;
+const DWEB_PROXY_PATH = SPAWNED_PROXIES.dweb;
 // in the packaged app process.execPath is the Electron binary — this env
 // makes it behave as plain node for the spawned MCP proxies (harmless in dev)
 const NODE_ENV_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
@@ -153,8 +206,7 @@ function createPermissionBroker(opts) {
             const p = pending.get(askId);
             if (!p)
                 return false;
-            const valid = p.ask.kind === "question" ? ["answer"] : ["allow", "deny"];
-            if (!valid.includes(behavior))
+            if (p.ask.kind === "question" ? behavior !== "answer" : behavior === "answer")
                 return false;
             p.finish(behavior, message, "user");
             return true;
@@ -162,9 +214,9 @@ function createPermissionBroker(opts) {
         close() {
             for (const p of [...pending.values()]) {
                 if (p.ask.kind === "question")
-                    p.finish("answer", "OperaBot: the turn is ending — wrap up.", "shutdown");
+                    p.finish("answer", "OperaBot: the turn is ending — wrap up.", "system");
                 else
-                    p.finish("deny", "OperaBot: the turn ended", "shutdown");
+                    p.finish("deny", "OperaBot: the turn ended", "system");
             }
             try {
                 server.close();
@@ -214,11 +266,24 @@ export const ClaudeDriver = {
         docsUrl: "https://claude.com/claude-code",
         signInCommand: "claude",
     },
-    models: MODELS,
+    models: STATIC_CLAUDE_MODELS,
     decodeConfig,
     defaultConfig: () => decodeConfig({}),
     async create(input) {
         const { instanceId, config } = input;
+        const catalogEnv = { ...process.env, ...input.environment };
+        let models = STATIC_CLAUDE_MODELS;
+        const refreshModels = async () => {
+            try {
+                const resolved = await mergeLocalInject(readClaudeModelCatalog(catalogEnv), catalogEnv);
+                if (resolved.options.length)
+                    models = resolved;
+            }
+            catch {
+                // Keep the last usable catalog when settings.json is unreadable.
+            }
+        };
+        await refreshModels();
         const listeners = new Set();
         // one active turn per thread; a second send while busy is a caller bug
         const active = new Map();
@@ -254,8 +319,10 @@ export const ClaudeDriver = {
                 args.push("--resume", sessionId);
             else
                 args.push("--session-id", newSessionId);
-            if (turn.model)
-                args.push("--model", turn.model);
+            const turnEnvironment = { ...process.env, ...input.environment };
+            const injected = applyClaudeInject({ ...turnEnvironment }, turn.model);
+            if (injected.model)
+                args.push("--model", injected.model);
             if (turn.effort)
                 args.push("--effort", turn.effort);
             if (turn.system)
@@ -264,12 +331,8 @@ export const ClaudeDriver = {
             // acceptEdits run silently denies anything unlisted)
             const mcpServers = {};
             const allowed = [];
-            if (turn.integrations?.composio?.key) {
-                mcpServers.composio = {
-                    type: "http",
-                    url: turn.integrations.composio.url || "https://connect.composio.dev/mcp",
-                    headers: { "x-consumer-api-key": turn.integrations.composio.key },
-                };
+            if (turn.integrations?.composio) {
+                mcpServers.composio = { ...turn.integrations.composio };
                 allowed.push("mcp__composio");
             }
             if (turn.integrations?.computer) {
@@ -350,14 +413,14 @@ export const ClaudeDriver = {
                 args.push("--mcp-config", mcpConfigPath);
                 args.push("--allowedTools", allowed.join(","));
             }
-            const env = claudeEnvironment();
+            const env = claudeEnvironment(turn.model, turnEnvironment);
             const child = spawnCli(config.cli, args, {
                 cwd: turn.cwd ?? homedir(),
                 env,
                 stdio: ["pipe", "pipe", "pipe"],
             });
             let settled = false;
-            const settle = (ok, stopReason, cost = null) => {
+            const settle = (ok, stopReason, cost = null, usage) => {
                 if (settled)
                     return;
                 settled = true;
@@ -370,7 +433,7 @@ export const ClaudeDriver = {
                     catch { }
                 }
                 active.delete(threadId);
-                emit({ ...base(threadId, turnId), type: "turn.completed", ok, stopReason, cost });
+                emit({ ...base(threadId, turnId), type: "turn.completed", ok, stopReason, cost, ...(usage ? { usage } : {}) });
             };
             // token streaming: true while --include-partial-messages is delivering
             // text deltas for the current assistant message, so the whole-message
@@ -446,7 +509,15 @@ export const ClaudeDriver = {
                         }
                         break;
                     case "result":
-                        settle(o.is_error !== true, o.stop_reason ?? o.terminal_reason ?? null, o.total_cost_usd ?? null);
+                        // result.usage is this invocation's total — one process per turn,
+                        // so it is the turn's figure. cache reads count as input: they
+                        // are billed (at the cache rate) and they fill the window.
+                        settle(o.is_error !== true, o.stop_reason ?? o.terminal_reason ?? null, o.total_cost_usd ?? null, o.usage
+                            ? {
+                                input: (o.usage.input_tokens || 0) + (o.usage.cache_read_input_tokens || 0) + (o.usage.cache_creation_input_tokens || 0),
+                                output: o.usage.output_tokens || 0,
+                            }
+                            : undefined);
                         break;
                 }
             };
@@ -495,21 +566,27 @@ export const ClaudeDriver = {
             return { turnId };
         };
         const snapshot = async () => {
-            const env = claudeEnvironment();
+            const env = claudeEnvironment(undefined, { ...process.env, ...input.environment });
             const version = await new Promise((resolve) => {
                 execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) => resolve(err ? null : stdout.trim()));
             });
             if (!version)
                 return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
             const authenticated = await claudeSignedIn(config.cli, env);
-            return { state: "available", version, authenticated };
+            // claudeEnvironment strips ANTHROPIC_API_KEY, so turns run on the
+            // CLI's own login (Pro/Max): the cost it reports is what the call
+            // WOULD bill, not a charge
+            return { state: "available", version, authenticated, billing: "subscription" };
         };
         return {
             instanceId,
             driverKind: DRIVER_KIND,
             displayName: input.displayName,
             enabled: input.enabled,
-            models: MODELS,
+            get models() {
+                return models;
+            },
+            refreshModels,
             snapshot,
             adapter: {
                 provider: DRIVER_KIND,
@@ -523,13 +600,15 @@ export const ClaudeDriver = {
                 sendTurn,
                 interruptTurn: async (threadId) => active.get(threadId)?.stop(),
                 respondToRequest: async (threadId, requestId, decision) => {
+                    // fail-closed by construction: no broker, or an ask that already
+                    // timed out / settled, is `unavailable` — the caller denies
                     const broker = active.get(threadId)?.broker;
                     if (!broker)
-                        throw new Error("no active turn with a permission broker on this thread");
+                        return "unavailable";
                     const behavior = decision.behavior === "answer" ? "answer" : decision.behavior;
-                    if (!broker.answer(requestId, behavior, decision.message)) {
-                        throw new Error("no such pending request (it may have timed out)");
-                    }
+                    if (!broker.answer(requestId, behavior, decision.message))
+                        return "unavailable";
+                    return behavior === "allow" ? "allowed-once" : behavior === "answer" ? "answered" : "rejected";
                 },
                 hasSession: (threadId) => active.has(threadId),
                 stopAll: async () => {

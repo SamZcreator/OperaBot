@@ -40,7 +40,7 @@ export const BoxAgentDriver = {
         const api = async (path, opts = {}) => {
             const res = await fetch(`${BOX_API}${path}`, {
                 ...opts,
-                headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(opts.headers ?? {}) },
+                headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...opts.headers },
                 signal: opts.signal ?? AbortSignal.timeout(30_000),
             });
             const body = await res.json().catch(() => null);
@@ -221,9 +221,7 @@ export const BoxAgentDriver = {
                 capabilities: { sessionModelSwitch: "in-session" },
                 sendTurn,
                 interruptTurn: async (threadId) => active.get(threadId)?.cancel(),
-                respondToRequest: async () => {
-                    throw new Error("box agent asks are not wired yet");
-                },
+                respondToRequest: async () => "unavailable", // this engine has no asks to answer
                 hasSession: (threadId) => active.has(threadId),
                 stopAll: async () => {
                     for (const { cancel } of active.values())

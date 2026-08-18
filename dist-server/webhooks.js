@@ -1,16 +1,83 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { z } from "zod";
 import { writeFileAtomic } from "./atomic.js";
 import { DATA_DIR } from "./config.js";
+import { parseJson, schemaIssue } from "./schema.js";
 const MAX_DELIVERIES = 2_000;
 const MAX_ATTEMPTS = 2_000;
 const MAX_EVENT_CHARS = 48_000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 10;
 const MAX_PENDING_RUNS = 3;
+const runOnSchema = z.enum(["masque", "cloud"]);
+const eventTypesSchema = z.array(z.string()).max(20).optional();
+const triggerInputSchema = z.object({
+    name: z.string(),
+    prompt: z.string(),
+    botId: z.string(),
+    runOn: runOnSchema.optional(),
+    enabled: z.boolean().optional(),
+    verificationPending: z.boolean().optional(),
+    eventTypes: eventTypesSchema,
+});
+const triggerPatchSchema = triggerInputSchema.partial();
+const verificationSampleSchema = z.object({
+    receivedAt: z.number().finite().nonnegative(),
+    eventName: z.string().optional(),
+    contentType: z.string().optional(),
+    preview: z.string(),
+});
+const storedWebhookSchema = z.object({
+    id: z.string().min(1),
+    endpointId: z.string().min(1),
+    name: z.string(),
+    prompt: z.string(),
+    botId: z.string().min(1),
+    runOn: runOnSchema,
+    enabled: z.boolean(),
+    createdAt: z.number().finite().nonnegative(),
+    updatedAt: z.number().finite().nonnegative(),
+    lastReceivedAt: z.number().finite().nonnegative().optional(),
+    lastRunId: z.string().optional(),
+    deliveryCount: z.number().int().nonnegative(),
+    verificationPending: z.boolean().optional(),
+    verifiedAt: z.number().finite().nonnegative().optional(),
+    verificationSample: verificationSampleSchema.optional(),
+    eventTypes: eventTypesSchema,
+    secretHash: z.string().regex(/^[a-f0-9]{64}$/),
+});
+const deliveryReceiptSchema = z.object({
+    key: z.string().min(1),
+    runId: z.string().min(1),
+    at: z.number().finite().nonnegative(),
+});
+const webhookAttemptSchema = z.object({
+    id: z.string().min(1),
+    webhookId: z.string().min(1),
+    receivedAt: z.number().finite().nonnegative(),
+    outcome: z.enum(["accepted", "captured", "duplicate", "ignored", "rejected"]),
+    statusCode: z.number().int().min(100).max(599),
+    eventName: z.string().optional(),
+    preview: z.string().optional(),
+    deliveryId: z.string().optional(),
+    runId: z.string().optional(),
+    reason: z.string().optional(),
+});
+const webhookFileSchema = z.object({
+    version: z.literal(1),
+    webhooks: z.array(storedWebhookSchema),
+    deliveries: z.array(deliveryReceiptSchema),
+    attempts: z.array(webhookAttemptSchema).optional(),
+});
+const taskPayloadSchema = z.object({ task: z.string().optional(), message: z.string().optional() });
+const statusErrorSchema = z.object({ status: z.number().int().optional() });
 function fail(status, message) {
     throw Object.assign(new Error(message), { status });
+}
+function invalidInput(error) {
+    fail(400, schemaIssue(error, "Invalid webhook settings"));
 }
 function hashSecret(secret) {
     return createHash("sha256").update(secret).digest("hex");
@@ -29,9 +96,9 @@ function newSecret() {
     return `whsec_${randomBytes(32).toString("base64url")}`;
 }
 function cleanInput(input) {
-    const name = String(input.name ?? "").trim().slice(0, 80);
-    const prompt = String(input.prompt ?? "").trim().slice(0, 20_000);
-    const botId = String(input.botId ?? "").trim();
+    const name = input.name.trim().slice(0, 80);
+    const prompt = input.prompt.trim().slice(0, 20_000);
+    const botId = input.botId.trim();
     const runOn = input.runOn ?? "masque";
     if (!name)
         fail(400, "Give the webhook a name");
@@ -39,23 +106,33 @@ function cleanInput(input) {
         fail(400, "Choose a MASQUE");
     if (runOn !== "masque" && runOn !== "cloud")
         fail(400, "Choose where this webhook runs");
-    const eventTypes = Array.from(new Set((Array.isArray(input.eventTypes) ? input.eventTypes : [])
-        .map((value) => String(value).trim().slice(0, 200))
+    const eventTypes = Array.from(new Set((input.eventTypes ?? [])
+        .map((value) => value.trim().slice(0, 200))
         .filter(Boolean))).slice(0, 20);
     const enabled = input.enabled !== false;
-    return {
+    const clean = {
         name,
         prompt,
         botId,
         runOn,
         enabled,
         verificationPending: enabled ? false : input.verificationPending === true,
-        ...(eventTypes.length ? { eventTypes } : {}),
     };
+    if (eventTypes.length)
+        clean.eventTypes = eventTypes;
+    return clean;
 }
-function withoutLegacyDuration(trigger) {
-    const { durationMinutes: _durationMinutes, ...current } = trigger;
-    return current;
+function parseTriggerInput(value) {
+    const parsed = triggerInputSchema.safeParse(value);
+    if (!parsed.success)
+        invalidInput(parsed.error);
+    return parsed.data;
+}
+function parseTriggerPatch(value) {
+    const parsed = triggerPatchSchema.safeParse(value);
+    if (!parsed.success)
+        invalidInput(parsed.error);
+    return parsed.data;
 }
 function publicTrigger(trigger) {
     const { secretHash: _secretHash, ...safe } = trigger;
@@ -63,11 +140,12 @@ function publicTrigger(trigger) {
 }
 function serializePayload(payload) {
     let text;
-    if (typeof payload === "string")
-        text = payload;
+    const plainText = z.string().safeParse(payload);
+    if (plainText.success)
+        text = plainText.data;
     else {
         try {
-            text = JSON.stringify(payload, null, 2);
+            text = JSON.stringify(payload, null, 2) ?? String(payload);
         }
         catch {
             text = String(payload);
@@ -81,10 +159,10 @@ function previewPayload(payload) {
     return serializePayload(payload).replace(/\s+/g, " ").trim().slice(0, 2_000);
 }
 function taskFromPayload(payload) {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload))
+    const parsed = taskPayloadSchema.safeParse(payload);
+    if (!parsed.success)
         return "";
-    const record = payload;
-    const task = typeof record.task === "string" ? record.task : typeof record.message === "string" ? record.message : "";
+    const task = parsed.data.task ?? parsed.data.message ?? "";
     return task.trim().slice(0, 20_000);
 }
 function eventPrompt(trigger, event, receivedAt, deliveryId) {
@@ -129,10 +207,12 @@ export class WebhookManager {
         this.file = options.file ?? join(DATA_DIR, "webhooks.json");
         this.now = options.now ?? Date.now;
         try {
-            const disk = JSON.parse(readFileSync(this.file, "utf8"));
-            this.webhooks = Array.isArray(disk.webhooks) ? disk.webhooks.map(withoutLegacyDuration) : [];
-            this.deliveries = Array.isArray(disk.deliveries) ? disk.deliveries.slice(-MAX_DELIVERIES) : [];
-            this.attempts = Array.isArray(disk.attempts) ? disk.attempts.slice(-MAX_ATTEMPTS) : [];
+            const parsed = webhookFileSchema.safeParse(parseJson(readFileSync(this.file, "utf8")));
+            if (!parsed.success)
+                throw parsed.error;
+            this.webhooks = parsed.data.webhooks;
+            this.deliveries = parsed.data.deliveries.slice(-MAX_DELIVERIES);
+            this.attempts = (parsed.data.attempts ?? []).slice(-MAX_ATTEMPTS);
         }
         catch {
             this.webhooks = [];
@@ -147,7 +227,7 @@ export class WebhookManager {
         return this.attempts.map((attempt) => ({ ...attempt }));
     }
     create(input) {
-        const clean = cleanInput(input);
+        const clean = cleanInput(parseTriggerInput(input));
         if (this.options.botState(clean.botId) === "missing")
             fail(400, "That MASQUE no longer exists");
         const now = this.now();
@@ -166,10 +246,11 @@ export class WebhookManager {
         this.emit(trigger);
         return { webhook: publicTrigger(trigger), secret };
     }
-    update(id, patch) {
+    update(id, value) {
         const trigger = this.webhooks.find((candidate) => candidate.id === id);
         if (!trigger)
             return null;
+        const patch = parseTriggerPatch(value);
         const clean = cleanInput({
             name: patch.name ?? trigger.name,
             prompt: patch.prompt ?? trigger.prompt,
@@ -243,7 +324,9 @@ export class WebhookManager {
             return this.dispatch(trigger, event);
         }
         catch (error) {
-            this.recordRejectedForTrigger(trigger, Number(error?.status) || 500, error instanceof Error ? error.message : String(error), event);
+            const parsedError = statusErrorSchema.safeParse(error);
+            const status = parsedError.success ? parsedError.data.status ?? 500 : 500;
+            this.recordRejectedForTrigger(trigger, status, error instanceof Error ? error.message : String(error), event);
             throw error;
         }
     }
@@ -345,12 +428,15 @@ export class WebhookManager {
         trigger.verifiedAt = receivedAt;
         trigger.lastReceivedAt = receivedAt;
         trigger.updatedAt = receivedAt;
-        trigger.verificationSample = {
+        const sample = {
             receivedAt,
-            ...(event.eventName ? { eventName: event.eventName.slice(0, 200) } : {}),
-            ...(event.contentType ? { contentType: event.contentType.slice(0, 200) } : {}),
             preview: previewPayload(event.payload),
         };
+        if (event.eventName)
+            sample.eventName = event.eventName.slice(0, 200);
+        if (event.contentType)
+            sample.contentType = event.contentType.slice(0, 200);
+        trigger.verificationSample = sample;
         this.appendAttempt(trigger, event, {
             outcome: "captured",
             statusCode: 202,
@@ -378,12 +464,17 @@ export class WebhookManager {
             receivedAt: this.now(),
             outcome: details.outcome,
             statusCode: details.statusCode,
-            ...(event.eventName ? { eventName: event.eventName.slice(0, 200) } : {}),
-            ...(event.payload !== undefined ? { preview: previewPayload(event.payload) } : {}),
-            ...(details.deliveryId ? { deliveryId: details.deliveryId.slice(0, 200) } : {}),
-            ...(details.runId ? { runId: details.runId } : {}),
-            ...(details.reason ? { reason: details.reason } : {}),
         };
+        if (event.eventName)
+            attempt.eventName = event.eventName.slice(0, 200);
+        if (event.payload !== undefined)
+            attempt.preview = previewPayload(event.payload);
+        if (details.deliveryId)
+            attempt.deliveryId = details.deliveryId.slice(0, 200);
+        if (details.runId)
+            attempt.runId = details.runId;
+        if (details.reason)
+            attempt.reason = details.reason;
         this.attempts.push(attempt);
         if (this.attempts.length > MAX_ATTEMPTS)
             this.attempts.splice(0, this.attempts.length - MAX_ATTEMPTS);
