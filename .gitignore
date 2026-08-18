@@ -10,3 +10,6 @@ electron/resources/speech-helper
 electron/resources/OperaBot Speech.app
 release
 .omb-scratch
+
+# persoonlijke notities, blijven lokaal
+*.local.md
