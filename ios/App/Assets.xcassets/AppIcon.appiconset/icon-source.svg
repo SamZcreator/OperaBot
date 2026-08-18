@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+ <defs>
+  <radialGradient id="bg" cx="66%" cy="28%" r="98%">
+   <stop offset="0" stop-color="#1B1F26"/><stop offset="0.52" stop-color="#0D0F13"/><stop offset="1" stop-color="#040506"/>
+  </radialGradient>
+  <linearGradient id="mk" x1="14%" y1="6%" x2="88%" y2="98%">
+   <stop offset="0" stop-color="#FFFFFF"/><stop offset="0.28" stop-color="#EBEDF0"/>
+   <stop offset="0.6" stop-color="#B6BBC3"/><stop offset="0.86" stop-color="#7C828C"/>
+   <stop offset="1" stop-color="#4F555E"/>
+  </linearGradient>
+ </defs>
+ <rect width="1024" height="1024" fill="url(#bg)"/>
+ <g transform="translate(97.58,84.05) scale(3.62667)">
+  <path d="M 34.041 54 C 40.041 34 70.041 22 114.2705 22 C 158.5 22 188.5 34 194.5 54 C 200 84 197 120 188 148 C 176 184 148 210 114.2705 214 C 80.541 210 52.541 184 40.541 148 C 31.541 120 28.541 84 34.041 54 Z" fill="url(#mk)"/>
+  <path d="M 58 94 Q 82 70 108 86" fill="none" stroke="#0A0B0E" stroke-opacity="0.46" stroke-width="12.5" stroke-linecap="round"/>
+  <path d="M 170.541 94 Q 146.541 70 120.541 86" fill="none" stroke="#0A0B0E" stroke-opacity="0.46" stroke-width="12.5" stroke-linecap="round"/>
+  <ellipse cx="88.35" cy="126" rx="12.4" ry="20.3" fill="#0A0B0E" fill-opacity="0.84"/>
+  <ellipse cx="140.19" cy="126" rx="12.4" ry="20.3" fill="#0A0B0E" fill-opacity="0.84"/>
+  <path d="M 93 163 Q 114.2705 176.5 135.5 163" fill="none" stroke="#0A0B0E" stroke-opacity="0.84" stroke-width="13.5" stroke-linecap="round"/>
+ </g>
+</svg>
