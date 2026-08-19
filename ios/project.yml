@@ -34,9 +34,13 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
-        # The catalog lives in App/, which is already a source path. Generated
-        # by `node scripts/make-app-icon.mjs` from the same mascot the app
-        # draws, so the icon cannot drift from the thing it depicts.
+        # The catalog lives in App/, which is already a source path. Its
+        # artwork is AppIcon.appiconset/icon-source.svg, deliberately its own
+        # file rather than the desktop drawing scaled up: iOS masks the
+        # corners itself and rejects an alpha channel, so this one is
+        # full-bleed and opaque, it is untilted, and its face marks are set
+        # heavier to survive at 60pt. scripts/make-app-icon.mjs renders the
+        # desktop icons only and does not touch this.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: App/Info.plist
