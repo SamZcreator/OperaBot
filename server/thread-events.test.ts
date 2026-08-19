@@ -123,14 +123,14 @@ describe("readThreadEvents", () => {
     const eventsDir = tmp();
     const nativeDir = tmp();
     const file = join(eventsDir, "t1.ndjson");
-    writeFileSync(file, line(runtime({ eventId: "large", createdAt: "1", type: "turn.started", text: "🐭".repeat(40_000) })));
+    writeFileSync(file, line(runtime({ eventId: "large", createdAt: "1", type: "turn.started", text: "🎭".repeat(40_000) })));
     expect(readThreadEvents({ eventsDir, nativeDir, threadId: "t1", limit: 2 }).total.runtime).toBe(1);
 
     appendFileSync(file, line(runtime({ eventId: "latest", createdAt: "2", type: "turn.started" })));
     const page = readThreadEvents({ eventsDir, nativeDir, threadId: "t1", limit: 2 });
     expect(page.total.runtime).toBe(2);
     expect(page.entries.map((entry) => (entry.data as { eventId: string }).eventId)).toEqual(["large", "latest"]);
-    expect((page.entries[0]!.data as { text: string }).text.startsWith("🐭🐭")).toBe(true);
+    expect((page.entries[0]!.data as { text: string }).text.startsWith("🎭🎭")).toBe(true);
   });
 
   it("refuses a thread id that could escape the log directory", () => {
