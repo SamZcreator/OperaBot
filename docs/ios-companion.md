@@ -247,6 +247,53 @@ cannot reach the keychain. Sign with a team instead — a free Apple ID under
 Xcode → Settings → Accounts is enough to get a personal one — or test the
 pairing path on a device.
 
+### Confirmed on a device, on a free Apple ID
+
+The paragraph above was reasoning from the error; this is the run that
+settled it. A free personal team is enough — no paid membership, nothing
+bought — and the whole path works on the first try.
+
+```sh
+xcodebuild -project ios/OperaBotCompanion.xcodeproj \
+  -scheme OperaBotCompanion \
+  -destination "platform=iOS,id=<device-udid>" \
+  -allowProvisioningUpdates \
+  CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM=<team-id> \
+  build
+
+xcrun devicectl device install app --device <device-udid> \
+  "<derived-data>/Build/Products/Debug-iphoneos/OperaBotCompanion.app"
+```
+
+`xcrun devicectl list devices` gives the UDID, and the team id is under
+`defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier` once an
+Apple ID is signed in. Developer Mode has to be on first — Settings →
+Privacy & Security → Developer Mode, which reboots the phone; until then
+`devicectl` refuses with *Developer Mode is disabled*. A locked or sleeping
+phone drops to `unavailable` mid-session, which looks like a build failure
+and is not: unlock it and the same command works.
+
+That build carries what the simulator's does not:
+
+```
+application-identifier               <team-id>.com.operabot.companion
+com.apple.developer.team-identifier  <team-id>
+Authority=Apple Development: <apple-id>
+```
+
+And the pairing completes. What proves it is not the device appearing in
+`GET :8811/state` — the simulator managed that much and stopped there — but
+`lastSeenAt` moving away from `createdAt` and continuing to move: paired at
+15:26:07, last seen 15:27:21, then 15:28:28, minute after minute, because
+the app is holding the event stream open. The three simulator records beside
+it still read "never spoke". That difference is the whole diagnosis, and it
+is the check worth running when this looks broken again.
+
+The catch is the seven-day one: a free team's profile expires, and the app
+stops launching until it is reinstalled with the same two commands. Fine for
+proving the path, not a way to live on a phone.
+
 ## Follow-on releases
 
 Keep the foundational merge separate from capabilities that widen security or
