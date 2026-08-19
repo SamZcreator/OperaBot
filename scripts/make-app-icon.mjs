@@ -349,16 +349,31 @@ function shade(index, px, py) {
     const d = Math.hypot(px - tileCentre[0], py - tileCentre[1]) / tileRadius;
     colour = sample(TILE_STOPS, d);
   }
-  // The hairline, at 28% rather than the 7% this drawing carried.
+  // The hairline, lit from the upper left rather than drawn evenly round.
   //
-  // macOS 26 lays its own specular sheen over every app icon — Claude's own
-  // .icns is a flat 137 across the top and the system draws it up to 200 —
-  // so the rim is not missing here, it is arriving on a near-black tile:
-  // 24 lifts to 140 where a mid-tone tile lifts to 200. Same sheen, less to
-  // work with. Meeting the neighbours therefore means bringing some of that
-  // light ourselves; at 28% the rendered rim lands around 185, which is
-  // where Freeform and Music sit.
-  if (hairMask[index] && !hairHole[index]) colour = colour.map((c) => c + (255 - c) * 0.28);
+  // macOS 26 lays its own specular sheen over every app icon, and that sheen
+  // is directional: measuring what the system actually draws, Claude's rim
+  // reads 86 at the upper left and 63 at the lower right but only 19 at the
+  // other two corners, and Music and Freeform agree within a few points.
+  // That diagonal is what makes a tile look like a lit surface instead of a
+  // sticker.
+  //
+  // An even rim fights it. At a flat 28% this icon measured 183/84/87/142
+  // against Claude's 86/19/19/63 — brighter everywhere, and brightest in the
+  // two corners that are supposed to fall away, which flattens the whole
+  // thing back out. So the rim is weighted by how much a point faces the
+  // light: full strength towards the upper left, nothing across the
+  // perpendicular, and 80% along the lower right where a curved surface
+  // catches the bounce.
+  const HAIR_PEAK = 0.42;
+  if (hairMask[index] && !hairHole[index]) {
+    const nx = px - big / 2;
+    const ny = py - big / 2;
+    const len = Math.hypot(nx, ny) || 1;
+    const facing = (-nx - ny) / (len * Math.SQRT2); // 1 upper-left, -1 lower-right
+    const weight = facing >= 0 ? facing : -facing * 0.8;
+    colour = colour.map((c) => c + (255 - c) * HAIR_PEAK * weight);
+  }
   return colour;
 }
 
