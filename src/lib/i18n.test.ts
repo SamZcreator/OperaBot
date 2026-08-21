@@ -41,6 +41,12 @@ describe("dictionaries", () => {
       "nav.teams",
       "app.updates",
       "section.engines",
+      // webhook, webhooks, terminal — vaktermen die het Nederlands
+      // onvertaald heeft overgenomen; een Nederlandse variant zou hier
+      // eerder verwarren dan helpen
+      "routine.webhook",
+      "webhook.title",
+      "webhook.terminal",
     ]);
     const identical = Object.keys(en).filter(
       (key) => !shared.has(key) && en[key as keyof typeof en] === nl[key as keyof typeof nl],
