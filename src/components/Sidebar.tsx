@@ -1,4 +1,5 @@
 import { track } from "@/lib/analytics";
+import { useT } from "./Language";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -227,6 +228,7 @@ function RoomContextMenu({
   menu: { groupId: string; x: number; y: number };
   onClose: () => void;
 }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const group = state.groups.find((g) => g.id === menu.groupId);
 
@@ -262,7 +264,7 @@ function RoomContextMenu({
         className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-ink hover:bg-raised/70"
       >
         <ClipboardCopy size={16} className="text-ink-secondary" />
-        Copy conversation ID
+        {t("room.copyId")}
       </button>
       <button
         onClick={() => {
@@ -272,7 +274,7 @@ function RoomContextMenu({
         className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-danger hover:bg-raised/70"
       >
         <Trash2 size={16} />
-        Delete Room
+        {t("room.delete")}
       </button>
     </div>,
     document.body,
@@ -281,6 +283,7 @@ function RoomContextMenu({
 
 /** Pick members → Create. The room name is optional; the server defaults it. */
 function NewRoomPanel({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const [name, setName] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -304,7 +307,7 @@ function NewRoomPanel({ onClose }: { onClose: () => void }) {
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className="w-[340px] rounded-2xl border border-hairline/50 bg-card p-4 shadow-2xl">
-        <div className="mb-3 text-[15px] font-semibold text-ink">New Room</div>
+        <div className="mb-3 text-[15px] font-semibold text-ink">{t("room.new")}</div>
         <input
           autoFocus
           value={name}
@@ -313,12 +316,12 @@ function NewRoomPanel({ onClose }: { onClose: () => void }) {
             if (e.key === "Enter") create();
             if (e.key === "Escape") onClose();
           }}
-          placeholder="Room name (optional)"
+          placeholder={t("room.namePlaceholder")}
           className="mb-3 w-full rounded-lg bg-raised/70 px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none"
         />
         <div className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
           {bots.length === 0 && (
-            <div className="px-2 py-4 text-center text-[13px] text-ink-secondary">Create a bot first — rooms are made of bots.</div>
+            <div className="px-2 py-4 text-center text-[13px] text-ink-secondary">{t("room.needsBot")}</div>
           )}
           {bots.map((b) => (
             <button
@@ -360,6 +363,7 @@ function BotContextMenu({
   onClose: () => void;
   onArchive: (bot: Bot) => void;
 }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const bot = state.bots.find((b) => b.id === menu.botId);
 
@@ -384,7 +388,7 @@ function BotContextMenu({
   const visibleBotCount = state.bots.filter((candidate) => !candidate.hidden).length;
   const archiveBlocked = Boolean(bot.chiefOfStaff) || visibleBotCount <= 1;
   const archiveHint = bot.chiefOfStaff
-    ? "Choose another Chief of Staff first"
+    ? t("chief.chooseAnother")
     : visibleBotCount <= 1
       ? "Keep at least one active bot"
       : undefined;
@@ -432,11 +436,11 @@ function BotContextMenu({
         ),
         item(
           <Crown size={16} className={bot.chiefOfStaff ? "text-accent" : "text-ink-secondary"} />,
-          bot.chiefOfStaff ? "Remove Chief of Staff" : "Make Chief of Staff",
+          bot.chiefOfStaff ? t("chief.remove") : t("chief.make"),
           () => dispatch({ type: "updateBot", botId: bot.id, patch: { chiefOfStaff: !bot.chiefOfStaff } }),
           {
             disabled: !bot.chiefOfStaff && !canCoordinate,
-            hint: !bot.chiefOfStaff && !canCoordinate ? "Choose a Claude or ACP engine first" : undefined,
+            hint: !bot.chiefOfStaff && !canCoordinate ? t("engine.chooseFirst") : undefined,
           },
         ),
         item(<FolderPlus size={16} className="text-ink-secondary" />, "Move to new section", undefined, {
@@ -447,7 +451,7 @@ function BotContextMenu({
           dispatch({ type: "markUnread", botId: bot.id }),
         ),
         divider("d1"),
-        item(<Pencil size={16} className="text-ink-secondary" />, "Edit Profile", () => {
+        item(<Pencil size={16} className="text-ink-secondary" />, t("profile.edit"), () => {
           dispatch({ type: "select", id: bot.id });
           dispatch({ type: "toggleSettings", open: true });
         }),
@@ -455,7 +459,7 @@ function BotContextMenu({
           dispatch({ type: "duplicateBot", botId: bot.id }),
         ),
         divider("d2"),
-        item(<ClipboardCopy size={16} className="text-ink-secondary" />, "Copy conversation ID", () => {
+        item(<ClipboardCopy size={16} className="text-ink-secondary" />, t("room.copyId"), () => {
           void navigator.clipboard?.writeText(bot.threadId);
         }),
         divider("d3"),
@@ -487,6 +491,7 @@ function BotListItem({
   onArchive: (bot: Bot) => void;
   archiveDisabled: boolean;
 }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const [renaming, setRenaming] = useState(false);
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
@@ -535,7 +540,7 @@ function BotListItem({
           <span className="flex min-w-0 items-center gap-1.5 truncate text-[13px] text-ink-secondary">
             {bot.chiefOfStaff && (
               <span className="flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-accent">
-                <Crown size={11} /> Chief of Staff
+                <Crown size={11} /> {t("settings.chiefOfStaff")}
               </span>
             )}
             {bot.chiefOfStaff && preview(bot) && <span className="shrink-0 text-ink-secondary/60">·</span>}
@@ -587,7 +592,7 @@ function BotListItem({
         aria-label={`Archive ${bot.name}`}
         title={
           bot.chiefOfStaff
-            ? "Choose another Chief of Staff first"
+            ? t("chief.chooseAnother")
             : archiveDisabled
               ? "Keep at least one active bot"
               : `Archive ${bot.name}`
@@ -609,6 +614,7 @@ function ArchivedBotsPanel({
   onClose: () => void;
   onRestored: (message: string) => void;
 }) {
+  const t = useT();
   const { dispatch } = useStore();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -682,8 +688,8 @@ function ArchivedBotsPanel({
       >
         <header className="flex items-start justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <h2 id="archived-bots-title" className="text-[22px] font-semibold tracking-[-0.01em] text-ink">Archived bots</h2>
-            <p className="mt-1 text-[13px] text-ink-secondary">Conversations are kept until you choose to delete a bot.</p>
+            <h2 id="archived-bots-title" className="text-[22px] font-semibold tracking-[-0.01em] text-ink">{t("archive.title")}</h2>
+            <p className="mt-1 text-[13px] text-ink-secondary">{t("archive.hint")}</p>
           </div>
           <div className="flex items-center gap-1">
             {bots.length > 1 && (
@@ -693,14 +699,14 @@ function ArchivedBotsPanel({
                 className="flex items-center gap-1.5 rounded-full bg-raised px-3.5 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-40"
               >
                 {restoringAll && <Loader2 size={13} className="animate-spin" />}
-                Restore all
+                {t("archive.restoreAll")}
               </button>
             )}
             <button
               onClick={onClose}
               disabled={restoringAll || Boolean(busyId)}
               className="rounded-lg p-2 text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-40"
-              aria-label="Close archived bots"
+              aria-label={t("archive.close")}
             >
               <X size={21} />
             </button>
@@ -722,7 +728,7 @@ function ArchivedBotsPanel({
                   className="flex min-w-[78px] items-center justify-center gap-1.5 rounded-full bg-raised px-3.5 py-2 text-[12.5px] text-ink hover:bg-raised-hover disabled:opacity-40"
                 >
                   {busyId === bot.id && <Loader2 size={13} className="animate-spin" />}
-                  Restore
+                  {t("archive.restore")}
                 </button>
               </div>
             ))}
@@ -736,6 +742,7 @@ function ArchivedBotsPanel({
 }
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   const importReturnRef = useRef<HTMLButtonElement>(null);
@@ -935,7 +942,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             ref={importReturnRef}
             onClick={() => setPlusOpen((o) => !o)}
             className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"
-            title="New or share"
+            title={t("nav.newOrShare")}
           >
             <Plus size={20} strokeWidth={2} />
           </button>
@@ -952,7 +959,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-ink hover:bg-raised/70"
                 >
                   <BotIcon size={16} className="text-ink-secondary" />
-                  New Bot
+                  {t("nav.newBot")}
                 </button>
                 <button
                   onClick={() => {
@@ -962,7 +969,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-ink hover:bg-raised/70"
                 >
                   <Users size={16} className="text-ink-secondary" />
-                  New Room
+                  {t("room.new")}
                 </button>
                 <button
                   onClick={() => {
@@ -983,7 +990,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-ink hover:bg-raised/70"
                 >
                   <Library size={16} className="text-ink-secondary" />
-                  Teams
+                  {t("nav.teams")}
                 </button>
                 {archivedBots.length > 0 && (
                   <button
@@ -994,7 +1001,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                     className="flex w-full items-center gap-3 px-3.5 py-2 text-left text-[14px] text-ink hover:bg-raised/70"
                   >
                     <Archive size={16} className="text-ink-secondary" />
-                    <span className="flex-1">Archived bots</span>
+                    <span className="flex-1">{t("archive.title")}</span>
                     <span className="text-[11.5px] text-ink-secondary">{archivedBots.length}</span>
                   </button>
                 )}
@@ -1012,8 +1019,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-            placeholder="Search"
-            aria-label="Search bots and messages"
+            placeholder={t("nav.search")}
+            aria-label={t("nav.searchHint")}
             className="w-full bg-transparent text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none"
           />
         </div>
@@ -1061,7 +1068,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           )}
         >
           <CalendarDays size={20} className={state.activeView === "routines" ? "text-accent" : "text-ink-secondary"} />
-          <span className="flex-1 text-[14px]">Automations</span>
+          <span className="flex-1 text-[14px]">{t("nav.automations")}</span>
           {state.routineRuns.some((run) => ["failed", "missed"].includes(run.status) && !run.seenAt) && (
             <span className="size-2 rounded-full bg-danger" />
           )}
@@ -1071,7 +1078,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left hover:bg-raised/50"
         >
           <Puzzle size={20} className="text-ink-secondary" />
-          <span className="text-[14px] text-ink">Connected apps</span>
+          <span className="text-[14px] text-ink">{t("settings.connectedApps")}</span>
         </button>
         <div className="flex items-center">
           <button
@@ -1087,7 +1094,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           <button
             onClick={() => dispatch({ type: "toggleAppSettings" })}
             className="rounded-md p-2 text-ink-secondary hover:bg-raised hover:text-ink"
-            title="App settings"
+            title={t("nav.appSettings")}
           >
             <Settings size={18} />
           </button>
@@ -1148,7 +1155,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   onClick={() => void undoTeamLoad(pendingTeamUndo)}
                   className="rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-raised"
                 >
-                  Undo
+                  {t("nav.undo")}
                 </button>
               )}
               {pendingBotUndo && (
@@ -1156,7 +1163,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                   onClick={() => void undoBotArchive(pendingBotUndo)}
                   className="rounded-md px-1.5 py-0.5 font-medium text-accent hover:bg-raised"
                 >
-                  Undo
+                  {t("nav.undo")}
                 </button>
               )}
             </div>

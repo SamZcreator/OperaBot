@@ -3,6 +3,7 @@
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useEffect, useRef, useState } from "react";
+import { useT } from "./Language";
 import { Coins, KeyRound, Monitor, Smartphone, Terminal, User, Volume2, X } from "lucide-react";
 import { useStore, type AppSettingsSection } from "@/state/store";
 import { ApiKeyRow } from "./ApiKeys";
@@ -15,19 +16,24 @@ import { LanguageCard } from "./LanguageCard";
 import { UsageSection } from "./UsageSection";
 import { VoiceSettings } from "./VoiceSettings";
 import { cn } from "@/lib/cn";
+import type { MessageKey } from "@/lib/i18n";
 
-const SECTIONS: Array<{ id: AppSettingsSection; label: string; icon: typeof User }> = [
-  { id: "general", label: "General", icon: User },
-  { id: "connections", label: "Connections", icon: KeyRound },
-  { id: "engines", label: "Engines", icon: Terminal },
-  { id: "companion", label: "Companion", icon: Smartphone },
-  { id: "computer", label: "Local VM", icon: Monitor },
-  { id: "voice", label: "Voice", icon: Volume2 },
-  { id: "usage", label: "Usage", icon: Coins },
+// The label is a key, not a sentence: this list is defined once at module
+// scope, long before anyone has chosen a language, so it cannot hold text.
+// It is translated where it is rendered instead.
+const SECTIONS: Array<{ id: AppSettingsSection; label: MessageKey; icon: typeof User }> = [
+  { id: "general", label: "section.general", icon: User },
+  { id: "connections", label: "section.connections", icon: KeyRound },
+  { id: "engines", label: "section.engines", icon: Terminal },
+  { id: "companion", label: "section.companion", icon: Smartphone },
+  { id: "computer", label: "section.computer", icon: Monitor },
+  { id: "voice", label: "section.voice", icon: Volume2 },
+  { id: "usage", label: "section.usage", icon: Coins },
 ];
 
 /** Name + email, persisted to /api/config {profile} on blur. */
 function ProfileFields() {
+  const t = useT();
   const { state, dispatch } = useStore();
   const [name, setName] = useState(state.config?.profile?.name ?? "");
   const [email, setEmail] = useState(state.config?.profile?.email ?? "");
@@ -51,7 +57,7 @@ function ProfileFields() {
     "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none";
   return (
     <div className="flex flex-col gap-3">
-      <input value={name} onChange={(e) => setName(e.target.value)} onBlur={save} placeholder="Your name" className={inputClass} />
+      <input value={name} onChange={(e) => setName(e.target.value)} onBlur={save} placeholder={t("app.yourName")} className={inputClass} />
       <input
         type="email"
         value={email}
@@ -65,6 +71,7 @@ function ProfileFields() {
 }
 
 function UpdatesRow() {
+  const t = useT();
   const s = useUpdaterState();
   if (!window.ogb?.updater) return null;
   const updater = window.ogb.updater;
@@ -81,7 +88,7 @@ function UpdatesRow() {
               ? `Check failed: ${s.message ?? "unknown error"}`
               : "You're on the latest version we know of.";
   return (
-    <Card title="Updates" subtitle={label}>
+    <Card title={t("app.updates")} subtitle={label}>
       <button
         onClick={() => {
           if (s?.status === "available") return void updater.download();
@@ -102,6 +109,7 @@ function UpdatesRow() {
 }
 
 export function SettingsModal() {
+  const t = useT();
   const { state, dispatch } = useStore();
   const section = state.appSettingsSection;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -165,7 +173,7 @@ export function SettingsModal() {
         {/* section nav */}
         <nav className="flex w-[190px] shrink-0 flex-col gap-0.5 border-r border-hairline/40 p-3">
           <div id="app-settings-title" className="px-2 pb-2 pt-1 text-[15px] font-semibold text-ink">
-            Settings
+            {t("settings.title")}
           </div>
           {SECTIONS.map(({ id, label, icon: Icon }) => (
             <button
@@ -178,7 +186,7 @@ export function SettingsModal() {
               )}
             >
               <Icon size={15} />
-              {label}
+              {t(label)}
             </button>
           ))}
         </nav>
@@ -190,7 +198,7 @@ export function SettingsModal() {
             </span>
             <button
               onClick={() => dispatch({ type: "toggleAppSettings", open: false })}
-              aria-label="Close settings"
+              aria-label={t("app.closeSettings")}
               className="rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"
             >
               <X size={18} />
@@ -201,7 +209,7 @@ export function SettingsModal() {
             {section === "general" && (
               <>
                 <LanguageCard />
-                <Card title="Profile" subtitle="Shown in the sidebar. Saved as you go.">
+                <Card title={t("app.profile")} subtitle={t("app.profileHint")}>
                   <ProfileFields />
                 </Card>
                 <UpdatesRow />
@@ -210,19 +218,19 @@ export function SettingsModal() {
 
             {section === "connections" && (
               <Card
-                title="Connections"
+                title={t("app.connections")}
                 subtitle="Connected apps work automatically in the installed app. Other optional service keys stay on this computer."
               >
                 <div className="flex flex-col gap-4">
                   {state.config?.composio.mode === "managed" ? (
                     <div className="rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-[13px] text-success">
-                      Connected apps service is ready
+                      {t("app.connectorsReady")}
                     </div>
                   ) : null}
                   <ApiKeyRow section="box" />
                   <ApiKeyRow section="opencodeGo" />
                   <details className="rounded-lg border border-hairline/40 bg-inset px-3 py-2">
-                    <summary className="cursor-pointer text-[13px] text-ink-secondary">Self-host connected apps</summary>
+                    <summary className="cursor-pointer text-[13px] text-ink-secondary">{t("app.selfHost")}</summary>
                     <div className="mt-3">
                       <ApiKeyRow section="composio" />
                     </div>
@@ -232,7 +240,7 @@ export function SettingsModal() {
             )}
 
             {section === "engines" && (
-              <Card title="Engine CLIs" subtitle="Which binary each engine runs. Saved as you go.">
+              <Card title={t("app.engineClis")} subtitle={t("app.engineClisHint")}>
                 <EnginesSettings />
               </Card>
             )}

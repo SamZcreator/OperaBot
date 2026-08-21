@@ -1,4 +1,5 @@
 import { Component, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useT } from "./Language";
 import {
   AlertTriangle,
   ArrowDown,
@@ -84,6 +85,7 @@ function DaySeparator({ at }: { at: number }) {
 
 /** Hover/focus-revealed copy control shared by user + bot bubbles. */
 function CopyButton({ text, className }: { text: string; className?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -92,8 +94,8 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
       }}
-      aria-label="Copy message"
-      title="Copy message"
+      aria-label={t("chat.copyMessage")}
+      title={t("chat.copyMessage")}
       className={cn(
         "rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
         className,
@@ -216,6 +218,7 @@ function BubbleEditor({
   onCancel: () => void;
   onSubmit: (text: string) => void;
 }) {
+  const t = useT();
   const [draft, setDraft] = useState(initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -249,14 +252,14 @@ function BubbleEditor({
           onClick={onCancel}
           className="rounded-full px-3 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
         >
-          Cancel
+          {t("common.cancel")}
         </button>
         <button
           onClick={submit}
           disabled={!draft.trim()}
           className="rounded-full bg-accent px-3 py-1 text-[13px] font-medium text-white disabled:opacity-40"
         >
-          Send
+          {t("chat.send")}
         </button>
       </div>
     </div>
@@ -282,6 +285,7 @@ function Bubble({
   onSubmitEdit: (text: string) => void;
   onRegenerate?: () => void;
 }) {
+  const t = useT();
   const { dispatch } = useStore();
   const user = message.role === "user";
   const [expanded, setExpanded] = useState(false);
@@ -314,9 +318,9 @@ function Bubble({
         {user && message.kind === "text" && !webhookView && !bot.busy && (
           <button
             onClick={onStartEdit}
-            aria-label="Edit message"
+            aria-label={t("chat.editMessage")}
             className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-            title="Edit message"
+            title={t("chat.editMessage")}
           >
             <Pencil size={14} />
           </button>
@@ -338,12 +342,12 @@ function Bubble({
             <div className="min-w-[300px] max-w-[520px]">
               <div className="flex items-center gap-2 border-b border-accent/15 bg-accent/[0.055] px-4 py-2.5 text-[11.5px] font-medium text-accent">
                 <Webhook size={13} />
-                <span>Webhook task</span>
+                <span>{t("chat.webhookTask")}</span>
               </div>
               <div className="px-4 py-3 whitespace-pre-wrap">{webhookView.task}</div>
               {webhookView.payload && (
                 <details className="border-t border-hairline/30 bg-inset/25 px-4 py-2.5 text-[11.5px] text-ink-secondary">
-                  <summary className="cursor-pointer select-none hover:text-ink">View event payload</summary>
+                  <summary className="cursor-pointer select-none hover:text-ink">{t("chat.viewPayload")}</summary>
                   <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-hairline/25 bg-black/25 p-3 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{webhookView.payload}</pre>
                 </details>
               )}
@@ -357,12 +361,12 @@ function Bubble({
               </div>
               {collapsible && (
                 <button onClick={() => setExpanded(true)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
-                  Show full message
+                  {t("chat.showFull")}
                 </button>
               )}
               {expanded && (
                 <button onClick={() => setExpanded(false)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
-                  Show less
+                  {t("chat.showLess")}
                 </button>
               )}
             </>
@@ -381,8 +385,8 @@ function Bubble({
             {isLastBotText && !bot.busy && onRegenerate && (
               <button
                 onClick={onRegenerate}
-                aria-label="Regenerate response"
-                title="Regenerate response"
+                aria-label={t("chat.regenerate")}
+                title={t("chat.regenerate")}
                 className="rounded-md p-1.5 text-ink-secondary opacity-0 transition-opacity hover:bg-raised hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
               >
                 <RefreshCw size={14} />
@@ -404,7 +408,7 @@ function Bubble({
       {user && message.queued && bot.busy && (
         <div className="mt-1 flex items-center gap-1 pr-1 text-[11px] text-ink-secondary/70">
           <Clock size={11} aria-hidden="true" />
-          <span>Queued — sends when this turn finishes</span>
+          <span>{t("chat.queued")}</span>
         </div>
       )}
       <ReactionChips threadId={bot.threadId} message={message} align={user ? "right" : "left"} />
@@ -414,7 +418,7 @@ function Bubble({
             onClick={() => switchTo(versions[versionIndex - 1])}
             disabled={versionIndex <= 0 || bot.busy}
             className="rounded p-0.5 hover:bg-raised hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-            title="Previous version"
+            title={t("chat.previousVersion")}
           >
             <ChevronLeft size={14} />
           </button>
@@ -425,7 +429,7 @@ function Bubble({
             onClick={() => switchTo(versions[versionIndex + 1])}
             disabled={versionIndex >= versions.length - 1 || bot.busy}
             className="rounded p-0.5 hover:bg-raised hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-            title="Next version"
+            title={t("chat.nextVersion")}
           >
             <ChevronRight size={14} />
           </button>
@@ -480,11 +484,12 @@ function ActivityChip({ message }: { message: Message }) {
 }
 
 function ScreenFrame({ png, mime }: { png: string; mime?: string }) {
+  const t = useT();
   return (
     <div className="flex justify-start">
       <img
         src={`data:${mime ?? "image/png"};base64,${png}`}
-        alt="Bot's screen"
+        alt={t("chat.botScreen")}
         className="max-w-[70%] rounded-2xl border border-hairline/40"
       />
     </div>
@@ -552,6 +557,7 @@ const MessagesList = memo(function MessagesList({
   onSubmitEdit: (id: string, text: string) => void;
   onRegenerate: () => void;
 }) {
+  const t = useT();
   const { dispatch } = useStore();
   return (
     <>
@@ -565,7 +571,7 @@ const MessagesList = memo(function MessagesList({
             inputClassName="rounded bg-inset px-1.5 py-0.5 text-center text-[17px] font-semibold"
           />
           <div className="max-w-[360px] text-[14px] text-ink-secondary">
-            {bot.description || "Send a message to start the conversation."}
+            {bot.description || t("chat.empty")}
           </div>
         </div>
       )}
@@ -625,6 +631,7 @@ const MessagesList = memo(function MessagesList({
 });
 
 export function ChatView({ bot }: { bot: Bot }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -814,7 +821,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           <button
             onClick={() => dispatch({ type: "toggleSettings" })}
             className="flex shrink-0 items-center rounded-lg p-0.5 hover:bg-raised/50"
-            title="Bot settings"
+            title={t("chat.botSettings")}
           >
             <MasqueAvatar
               color={bot.color}
@@ -832,7 +839,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           />
           {bot.chiefOfStaff && (
             <span className="flex items-center gap-1 rounded-full bg-accent/12 px-2 py-0.5 text-[11px] font-medium text-accent">
-              <Crown size={11} /> Chief of Staff
+              <Crown size={11} /> {t("settings.chiefOfStaff")}
             </span>
           )}
           {bot.busy && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
@@ -842,10 +849,10 @@ export function ChatView({ bot }: { bot: Bot }) {
             <button
               onClick={() => dispatch({ type: "interrupt", botId: bot.id })}
               className="flex items-center gap-1.5 rounded-full border border-hairline/40 bg-raised/60 px-2.5 py-1 text-[13px] text-ink-secondary hover:bg-raised hover:text-ink"
-              title="Stop this turn"
+              title={t("chat.stopTurn")}
             >
               <Square size={12} className="fill-current" />
-              Stop
+              {t("chat.stop")}
             </button>
           )}
           <TaskPicker bot={bot} />
@@ -859,19 +866,19 @@ export function ChatView({ bot }: { bot: Bot }) {
               "rounded-md p-1.5 hover:bg-raised",
               state.computerOpen ? "text-accent" : "text-ink-secondary hover:text-ink",
             )}
-            title="Bot's computer"
+            title={t("chat.botComputer")}
           >
             <Monitor size={18} />
           </button>
           <button
             onClick={() => dispatch({ type: "toggleInspector" })}
-            aria-label="Inspector"
+            aria-label={t("chat.inspector")}
             aria-pressed={state.inspectorOpen}
             className={cn(
               "rounded-md p-1.5 hover:bg-raised",
               state.inspectorOpen ? "text-accent" : "text-ink-secondary hover:text-ink",
             )}
-            title="Inspector — runtime events and raw protocol for this thread"
+            title={t("chat.inspectorHint")}
           >
             <Bug size={18} />
           </button>
@@ -957,7 +964,7 @@ export function ChatView({ bot }: { bot: Bot }) {
             <div className="flex justify-start">
               <div className="flex items-center gap-2 rounded-full border border-hairline/40 bg-panel px-3 py-1.5 text-[13px] text-ink-secondary">
                 <Loader2 size={13} className="animate-spin" />
-                Setting up this bot's computer…
+                {t("chat.computerStarting")}
               </div>
             </div>
           )}
@@ -985,7 +992,7 @@ export function ChatView({ bot }: { bot: Bot }) {
       {!follow && (
         <button
           onClick={jumpToLatest}
-          aria-label="Jump to latest messages"
+          aria-label={t("chat.jumpToLatest")}
           className="animate-pop-in absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-hairline/40 bg-raised px-3 py-1.5 text-[12.5px] text-ink shadow-lg hover:bg-raised-hover"
         >
           <ArrowDown size={13} /> Jump to latest

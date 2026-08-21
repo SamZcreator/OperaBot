@@ -28,7 +28,20 @@ describe("dictionaries", () => {
     // is pasted into nl.ts and never looked at again. Terms that are the
     // same word in both languages are listed, so the exception is a decision
     // someone wrote down rather than a gap nobody noticed.
-    const shared = new Set(["settings.model", "settings.computer", "usage.tokens"]);
+    // Words that are genuinely the same in both languages. Each one is a
+    // decision, not an oversight — that is the whole point of listing them:
+    //   model, computer, tokens  — the same loanwords in Dutch
+    //   teams, updates           — long since naturalised
+    //   engines                  — the app's own term for claude/codex/grok,
+    //                              not the English word for a motor
+    const shared = new Set([
+      "settings.model",
+      "settings.computer",
+      "usage.tokens",
+      "nav.teams",
+      "app.updates",
+      "section.engines",
+    ]);
     const identical = Object.keys(en).filter(
       (key) => !shared.has(key) && en[key as keyof typeof en] === nl[key as keyof typeof nl],
     );

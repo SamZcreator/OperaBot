@@ -1,4 +1,5 @@
 import { track } from "@/lib/analytics";
+import { useT } from "./Language";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Clock, Mic, Square, Users, X } from "lucide-react";
 import { useStore, visibleMessages, type Bot, type Group } from "@/state/store";
@@ -42,6 +43,7 @@ export function Composer({
   members?: Bot[];
   onEditLast?: () => void;
 }) {
+  const t = useT();
   const { state, dispatch } = useStore();
   const { capabilities } = useDesktopCapabilities();
   // Unified target: a 1:1 bot thread or a room. In a room the @ picker
@@ -221,7 +223,7 @@ export function Composer({
             </span>
             <button
               onClick={() => setQueued(null)}
-              aria-label="Discard queued message"
+              aria-label={t("chat.discardQueued")}
               className="rounded p-0.5 hover:bg-raised hover:text-ink"
             >
               <X size={13} />
@@ -231,7 +233,7 @@ export function Composer({
         {pickerOpen && (
           <div
             role="listbox"
-            aria-label="Tag a bot"
+            aria-label={t("chat.tagBot")}
             className="absolute bottom-full left-2 z-20 mb-2 w-72 overflow-hidden rounded-xl border border-hairline/40 bg-raised shadow-lg"
           >
             {candidates.map((peer, i) => (
@@ -366,9 +368,9 @@ export function Composer({
               if (group) dispatch({ type: "interruptGroup", groupId: group.id });
               else if (bot) dispatch({ type: "interrupt", botId: bot.id });
             }}
-            aria-label="Stop this turn"
+            aria-label={t("chat.stopTurn")}
             className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink"
-            title="Stop"
+            title={t("chat.stop")}
           >
             <Square size={14} className="fill-current" />
           </button>
@@ -376,14 +378,14 @@ export function Composer({
         {!busy && !hasContent && capabilities.dictation.available && (
           <button
             onClick={toggleMic}
-            aria-label={recording ? "Stop dictation" : "Start dictation"}
+            aria-label={recording ? t("dictation.stop") : "Start dictation"}
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-full",
               recording
                 ? "animate-pulse bg-danger/20 text-danger"
                 : "text-ink-secondary hover:bg-raised hover:text-ink",
             )}
-            title={recording ? "Stop dictation (Esc)" : "Dictate"}
+            title={recording ? t("dictation.stopEsc") : "Dictate"}
           >
             <Mic size={18} />
           </button>
@@ -391,8 +393,8 @@ export function Composer({
         {hasContent && (
           <button
             onClick={send}
-            aria-label={busy ? "Queue message" : "Send message"}
-            title={busy ? "Sends when the current turn finishes" : "Send"}
+            aria-label={busy ? "Queue message" : t("chat.sendMessage")}
+            title={busy ? t("chat.sendsAfterTurn") : "Send"}
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-full text-white",
               busy ? "bg-raised text-ink-secondary hover:bg-raised-hover" : "bg-accent hover:brightness-110",
