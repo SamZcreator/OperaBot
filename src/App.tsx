@@ -13,6 +13,7 @@ import { InspectorPanel } from "@/components/InspectorPanel";
 import { SettingsModal } from "@/components/SettingsModal";
 import { UpdateBanner } from "@/components/UpdateBanner";
 import { DesktopCapabilitiesProvider } from "@/components/DesktopCapabilities";
+import { LanguageProvider } from "@/components/Language";
 import { RoutinesPage } from "@/components/RoutinesPage";
 import { NoEngines } from "@/components/NoEngines";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -146,11 +147,13 @@ export default function App() {
     initAnalytics();
   }, []);
   return (
-    <DesktopCapabilitiesProvider>
-      <StoreProvider>
-        <Shell />
-        {gated && <Onboarding onDone={() => setGated(false)} />}
-      </StoreProvider>
-    </DesktopCapabilitiesProvider>
+    <LanguageProvider>
+      <DesktopCapabilitiesProvider>
+        <StoreProvider>
+          <Shell />
+          {gated && <Onboarding onDone={() => setGated(false)} />}
+        </StoreProvider>
+      </DesktopCapabilitiesProvider>
+    </LanguageProvider>
   );
 }
