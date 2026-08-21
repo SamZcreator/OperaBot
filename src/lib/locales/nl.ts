@@ -227,4 +227,21 @@ export const nl: Dictionary = {
   "routine.deletedBot": "Verwijderde bot",
   "routine.calendarIntro": "Laat bots taken uitvoeren volgens een rooster.",
   "routine.webhookIntro": "Laat bots taken uitvoeren zodra er een gebeurtenis binnenkomt.",
+
+  // ── welkomstscherm ──────────────────────────────────────────────────
+  "welcome.title": "Welkom bij OperaBot",
+  "welcome.intro": "Bots die echt werk doen op hun eigen computer. Vertel wie je bent, dan laten we het weten als er iets groots aankomt.",
+  "welcome.continue": "Doorgaan",
+  "welcome.maybeLater": "Misschien later",
+  "welcome.yourEngines": "Jouw engines",
+  "welcome.ready": "Klaar voor gebruik",
+  "welcome.needsSetup": "Moet nog ingesteld",
+  "welcome.permissions": "Toestemmingen",
+  "welcome.permissionsHint": "Niet verplicht, en alleen gebruikt wanneer je er zelf om vraagt.",
+  "welcome.microphone": "Microfoon en spraak",
+  "welcome.microphoneHint": "Inspreken in het berichtveld, op het toestel zelf omgezet naar tekst.",
+  "welcome.openSettings": "Instellingen openen",
+  "welcome.enable": "Aanzetten",
+  "welcome.start": "Aan de slag met OperaBot",
+  "welcome.skip": "Nu overslaan",
 };

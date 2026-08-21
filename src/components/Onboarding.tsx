@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useT } from "./Language";
 import { Check, AlertTriangle, Loader2, Mic } from "lucide-react";
 import { MasqueAvatar } from "./Avatar";
 import { identifyEmail, setEmailGateDone, track } from "@/lib/analytics";
@@ -106,6 +107,7 @@ function SetupRow(entry: EngineEntry) {
 }
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
+  const t = useT();
   const { capabilities } = useDesktopCapabilities();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -193,17 +195,16 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         {step === 0 && (
           <div className="flex flex-col items-center">
             <MasqueAvatar color="green" state="happy" size={72} />
-            <h1 className="mt-4 text-[20px] font-semibold text-ink">Welcome to OperaBot</h1>
+            <h1 className="mt-4 text-[20px] font-semibold text-ink">{t("welcome.title")}</h1>
             <p className="mt-1.5 text-center text-[14px] leading-relaxed text-ink-secondary">
-              Bots that do real work on their own computer. Tell us who you are
-              and we&rsquo;ll let you know when big things ship.
+              {t("welcome.intro")}
             </p>
             <input
               autoFocus
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
+              placeholder={t("app.yourName")}
               className="mt-5 w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2.5 text-[15px] text-ink placeholder:text-ink-secondary focus:border-hairline focus:outline-none"
             />
             <input
@@ -218,24 +219,20 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               onClick={saveProfile}
               disabled={!valid}
               className="mt-3 w-full rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white disabled:opacity-40"
-            >
-              Continue
-            </button>
+            >{t("welcome.continue")}</button>
             <button
               onClick={() => {
                 track("email_skipped");
                 setStep(1);
               }}
               className="mt-3 text-[12px] text-ink-secondary hover:text-ink"
-            >
-              Maybe later
-            </button>
+            >{t("welcome.maybeLater")}</button>
           </div>
         )}
 
         {step === 1 && (
           <div className="flex min-h-0 flex-col">
-            <h1 className="text-[18px] font-semibold text-ink">Your engines</h1>
+            <h1 className="text-[18px] font-semibold text-ink">{t("welcome.yourEngines")}</h1>
             <p className="mt-1 text-[13.5px] text-ink-secondary">
               Bots run on AI tools installed on this computer — here&rsquo;s what we found.
             </p>
@@ -248,7 +245,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                 <>
                   {readyEngines.length > 0 && (
                     <>
-                      <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">Ready</div>
+                      <div className="text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary">{t("welcome.ready")}</div>
                       <div className="grid grid-cols-2 gap-2.5">
                         {readyEngines.map((e) => (
                           <ReadyTile key={e.label} {...e} />
@@ -258,9 +255,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   )}
                   {setupEngines.length > 0 && (
                     <>
-                      <div className={`text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary ${readyEngines.length ? "mt-2" : ""}`}>
-                        Needs setup
-                      </div>
+                      <div className={`text-[11.5px] font-medium uppercase tracking-wide text-ink-secondary ${readyEngines.length ? "mt-2" : ""}`}>{t("welcome.needsSetup")}</div>
                       {setupEngines.map((e) => (
                         <SetupRow key={e.label} {...e} />
                       ))}
@@ -272,26 +267,24 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             <button
               onClick={() => (capabilities.dictation.available ? setStep(2) : finish())}
               className="mt-5 w-full shrink-0 rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white"
-            >
-              Continue
-            </button>
+            >{t("welcome.continue")}</button>
           </div>
         )}
 
         {step === 2 && (
           <div className="flex flex-col">
-            <h1 className="text-[18px] font-semibold text-ink">Permissions</h1>
+            <h1 className="text-[18px] font-semibold text-ink">{t("welcome.permissions")}</h1>
             <p className="mt-1 text-[13.5px] text-ink-secondary">
-              Optional, and only ever used when you ask for the feature.
+              {t("welcome.permissionsHint")}
             </p>
             <div className="mt-4 flex flex-col gap-2.5">
               <div className="flex items-center justify-between gap-3 rounded-xl bg-card p-3.5">
                 <div className="flex items-start gap-3">
                   <Mic size={18} className="mt-0.5 shrink-0 text-ink-secondary" />
                   <div>
-                    <div className="text-[14px] font-medium text-ink">Microphone & speech</div>
+                    <div className="text-[14px] font-medium text-ink">{t("welcome.microphone")}</div>
                     <div className="mt-0.5 text-[12.5px] text-ink-secondary">
-                      Voice dictation into the composer, transcribed on-device.
+                      {t("welcome.microphoneHint")}
                     </div>
                   </div>
                 </div>
@@ -301,18 +294,14 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   <button
                     onClick={() => window.ogb?.permOpenSettings?.("mic")}
                     className="shrink-0 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover"
-                  >
-                    Open Settings
-                  </button>
+                  >{t("welcome.openSettings")}</button>
                 ) : (
                   <button
                     onClick={() =>
                       window.ogb?.permRequestMic?.().then(() => window.ogb?.permStatus?.().then(setPerms))
                     }
                     className="shrink-0 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-ink hover:bg-raised-hover"
-                  >
-                    Enable
-                  </button>
+                  >{t("welcome.enable")}</button>
                 )}
               </div>
               {/* Screen Recording deliberately has no row here: macOS 15+
@@ -321,12 +310,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   triggers on the first real capture in the Computer panel,
                   which is the moment the user has context for the dialog. */}
             </div>
-            <button onClick={finish} className="mt-5 w-full rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white">
-              Start using OperaBot
-            </button>
-            <button onClick={finish} className="mt-3 text-[12px] text-ink-secondary hover:text-ink">
-              Skip for now
-            </button>
+            <button onClick={finish} className="mt-5 w-full rounded-lg bg-accent py-2.5 text-[15px] font-medium text-white">{t("welcome.start")}</button>
+            <button onClick={finish} className="mt-3 text-[12px] text-ink-secondary hover:text-ink">{t("welcome.skip")}</button>
           </div>
         )}
 

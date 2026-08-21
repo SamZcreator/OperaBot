@@ -222,4 +222,21 @@ export const en = {
   "routine.deletedBot": "Deleted bot",
   "routine.calendarIntro": "Run bot tasks on a schedule.",
   "routine.webhookIntro": "Run bot tasks when an event arrives.",
+
+  // ── welkomstscherm ──────────────────────────────────────────────────
+  "welcome.title": "Welcome to OperaBot",
+  "welcome.intro": "Bots that do real work on their own computer. Tell us who you are and we’ll let you know when big things ship.",
+  "welcome.continue": "Continue",
+  "welcome.maybeLater": "Maybe later",
+  "welcome.yourEngines": "Your engines",
+  "welcome.ready": "Ready",
+  "welcome.needsSetup": "Needs setup",
+  "welcome.permissions": "Permissions",
+  "welcome.permissionsHint": "Optional, and only ever used when you ask for the feature.",
+  "welcome.microphone": "Microphone & speech",
+  "welcome.microphoneHint": "Voice dictation into the composer, transcribed on-device.",
+  "welcome.openSettings": "Open Settings",
+  "welcome.enable": "Enable",
+  "welcome.start": "Start using OperaBot",
+  "welcome.skip": "Skip for now",
 } as const;
